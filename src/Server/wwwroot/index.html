@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101c32">
+  <title>Roomly — Meeting room booking</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@10.0.0/dist/browser/signalr.min.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Roomly home"><span class="brand-mark">R</span><span>roomly<span class="brand-dot">.</span></span></a>
+    <div class="topbar-right"><span id="connection-state" class="connection"><i></i> Live updates</span><span id="user-label" class="user-label"></span><button id="logout-button" class="button button-quiet hidden">Sign out</button></div>
+  </header>
+
+  <main class="page-shell">
+    <section id="auth-view" class="auth-layout">
+      <div class="auth-copy">
+        <div class="eyebrow"><span class="eyebrow-line"></span> YOUR SPACE, ON YOUR TIME</div>
+        <h1>Good meetings<br><span>start here.</span></h1>
+        <p>Find a room that fits your day. Book a free time slot and your team will see the update instantly.</p>
+        <div class="auth-note"><span class="note-icon">↗</span><span>Room availability stays in sync in real time.</span></div>
+      </div>
+      <div class="auth-card">
+        <div class="auth-tabs"><button class="auth-tab active" data-auth-mode="login">Sign in</button><button class="auth-tab" data-auth-mode="register">Create account</button></div>
+        <h2 id="auth-title">Welcome back</h2><p id="auth-subtitle" class="muted">Sign in to book a meeting room.</p>
+        <form id="auth-form" class="form-stack">
+          <label id="display-name-field" class="hidden">Full name<input name="displayName" autocomplete="name" maxlength="200" placeholder="Alex Morgan"></label>
+          <label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@company.com"></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="At least 6 characters"></label>
+          <button id="auth-submit" class="button button-primary button-wide" type="submit">Sign in <span>→</span></button>
+        </form>
+        <div id="auth-message" class="message" role="status"></div>
+        <p class="auth-footnote">Secure sign-in powered by Reenbit Identity</p>
+      </div>
+    </section>
+
+    <section id="app-view" class="hidden">
+      <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> WORKSPACE</div><h1>Find your <span>room.</span></h1><p class="muted">Choose a meeting room and book a time that works for you.</p></div><button id="new-resource-button" class="button button-primary hidden">＋ Add room</button></div>
+      <div class="content-grid">
+        <aside class="panel resource-panel"><div class="panel-heading"><div><span class="section-kicker">YOUR SPACES</span><h2>Meeting rooms</h2></div><span id="resource-count" class="count-pill">0</span></div><div id="resource-list" class="resource-list"></div><div id="resource-empty" class="empty-state hidden"><span class="empty-icon">⌂</span><strong>No rooms yet</strong><span>Ask an administrator to add a room.</span></div></aside>
+        <section class="panel schedule-panel"><div id="schedule-placeholder" class="schedule-placeholder"><div class="placeholder-art"><span>⌖</span><i></i><i></i><i></i></div><h2>Pick a room to get started</h2><p>Available time slots will appear here.</p></div><div id="schedule-content" class="hidden"><div class="panel-heading schedule-heading"><div><span class="section-kicker">ROOM SCHEDULE</span><h2 id="selected-room-name"></h2><p id="selected-room-description" class="muted"></p></div><label class="date-control"><span>DATE</span><input id="schedule-date" type="date"></label></div><div class="schedule-legend"><span><i class="legend-free"></i> Available</span><span><i class="legend-booked"></i> Booked</span></div><div id="slot-list" class="slot-list"></div><div id="slot-empty" class="empty-state hidden"><span class="empty-icon">◷</span><strong>No slots for this day</strong><span>Try another date or ask an administrator to add availability.</span></div></div></section>
+      </div>
+      <section id="admin-bookings-panel" class="panel admin-bookings hidden"><div class="panel-heading"><div><span class="section-kicker">ADMINISTRATION</span><h2>All bookings</h2></div><span id="booking-count" class="count-pill">0</span></div><div id="admin-bookings-list" class="booking-list"></div></section>
+      <div id="app-message" class="toast" role="status"></div>
+    </section>
+  </main>
+
+  <dialog id="resource-dialog" class="modal"><form id="resource-form" method="dialog" class="modal-card"><button class="modal-close" value="cancel" aria-label="Close">×</button><span class="section-kicker">ROOM MANAGEMENT</span><h2 id="resource-dialog-title">Add a room</h2><label>Room name<input name="name" required maxlength="200" placeholder="e.g. Cedar Room"></label><label>Description<input name="description" maxlength="2000" placeholder="Capacity, equipment, or location"></label><label id="resource-active-field" class="check-label hidden"><input name="isActive" type="checkbox" checked> Room is available for booking</label><div class="modal-actions"><button class="button button-quiet" value="cancel">Cancel</button><button id="resource-save" class="button button-primary" value="default">Save room</button></div></form></dialog>
+  <dialog id="slots-dialog" class="modal"><form id="slots-form" method="dialog" class="modal-card"><button class="modal-close" value="cancel" aria-label="Close">×</button><span class="section-kicker">ROOM MANAGEMENT</span><h2>Add availability</h2><p class="muted">Choose the start and end time in your local timezone. We'll store them as UTC.</p><label>Start time<input name="start" type="datetime-local" required></label><label>End time<input name="end" type="datetime-local" required></label><div class="modal-actions"><button class="button button-quiet" value="cancel">Cancel</button><button class="button button-primary" value="default">Add time slot</button></div></form></dialog>
+</body>
+</html>

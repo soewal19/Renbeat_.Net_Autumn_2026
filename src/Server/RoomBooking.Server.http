@@ -1,0 +1,6 @@
+@RoomBooking.Server_HostAddress = http://localhost:5238
+
+GET {{RoomBooking.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
