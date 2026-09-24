@@ -1,0 +1,129 @@
+name: CI - Build & Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      environmentName:
+        description: Azure environment name
+        required: true
+        default: dev
+      appName:
+        description: Application name prefix
+        required: true
+        default: roombooking
+      location:
+        description: Azure deployment region
+        required: true
+        default: westeurope
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    env:
+      DOTNET_VERSION: "10.0.x"
+      ASPNETCORE_ENVIRONMENT: "Production"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore RoomBooking.slnx
+
+      - name: Build solution
+        run: dotnet build RoomBooking.slnx --no-restore --configuration Release
+
+      - name: Run unit tests
+        run: dotnet test tests/UnitTests/RoomBooking.UnitTests.csproj --no-build --configuration Release --logger "trx;LogFileName=unit-tests.trx"
+
+      - name: Run integration tests
+        run: dotnet test tests/IntegrationTests/RoomBooking.IntegrationTests.csproj --no-build --configuration Release --logger "trx;LogFileName=integration-tests.trx"
+        env:
+          DOTNET_ENVIRONMENT: "Production"
+
+      - name: Run concurrency tests
+        run: dotnet test tests/ConcurrencyTests/RoomBooking.ConcurrencyTests.csproj --no-build --configuration Release --logger "trx;LogFileName=concurrency-tests.trx"
+        env:
+          DOTNET_ENVIRONMENT: "Production"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            **/TestResults/*.trx
+          if-no-files-found: ignore
+
+      - name: Publish (validation only)
+        run: dotnet publish src/Server/RoomBooking.Server.csproj --no-build --configuration Release --output ./publish
+
+      - name: Package app
+        if: github.event_name == 'workflow_dispatch'
+        run: cd publish && zip -qr ../room-booking.zip .
+
+      - name: Upload app package
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-booking-app
+          path: room-booking.zip
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy to Azure
+    if: github.event_name == 'workflow_dispatch'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      ENVIRONMENT_NAME: ${{ inputs.environmentName }}
+      APP_NAME: ${{ inputs.appName }}
+      AZURE_LOCATION: ${{ inputs.location }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download app package
+        uses: actions/download-artifact@v4
+        with:
+          name: room-booking-app
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Provision infrastructure and deploy app
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          APP_ADMIN_PASSWORD: ${{ secrets.APP_ADMIN_PASSWORD }}
+        run: |
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+          RESOURCE_GROUP="rg-${APP_NAME}-${ENVIRONMENT_NAME}"
+          APP_SERVICE_NAME=$(az deployment sub create \
+            --name "room-booking-${ENVIRONMENT_NAME}" \
+            --location "$AZURE_LOCATION" \
+            --template-file infra/main.bicep \
+            --parameters environmentName="$ENVIRONMENT_NAME" appName="$APP_NAME" \
+              sqlAdminPassword="$SQL_ADMIN_PASSWORD" adminPassword="$APP_ADMIN_PASSWORD" \
+            --query 'properties.outputs.appServiceName.value' -o tsv)
+          az webapp deploy --resource-group "$RESOURCE_GROUP" --name "$APP_SERVICE_NAME" \
+            --src-path room-booking.zip --type zip
+          az webapp restart --resource-group "$RESOURCE_GROUP" --name "$APP_SERVICE_NAME"
+          APP_HOST="https://${APP_SERVICE_NAME}.azurewebsites.net"
+          echo "Application deployed to ${APP_HOST}" >> "$GITHUB_STEP_SUMMARY"
