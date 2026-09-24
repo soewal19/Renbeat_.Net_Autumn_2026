@@ -1,0 +1,67 @@
+## .NET gitignore — RoomBooking Solution
+
+# Build output
+[Bb]in/
+[Oo]bj/
+out/
+publish/
+/infra/main.json
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vscode/
+*.code-workspace
+
+# ReSharper
+_ReSharper*/
+*.ncrunch*
+*.resharper
+*.DotSettings.user
+
+# Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+!**/packages/build/
+
+# Logs
+*.log
+logs/
+
+# Secrets and environment
+.env
+.env.*
+!.env.example
+secrets.json
+appsettings.Production.json
+appsettings.Staging.json
+
+# Azure publish profiles
+*.pubxml
+*.azurePubxml
+*.PublishSettings
+
+# Docker
+.dockerignore
+
+# macOS
+.DS_Store
+Thumbs.db
+
+# Migrations (keep generated migrations, but not lock files)
+*.db
+*.db-shm
+*.db-wal
