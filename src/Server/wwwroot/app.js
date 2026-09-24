@@ -1,6 +1,6 @@
 (() => {
   const $ = (selector) => document.querySelector(selector);
-  const state = { user: null, resources: [], selected: null, slots: [], hub: null, authMode: 'login', toastTimer: null };
+  const state = { user: null, resources: [], selected: null, slots: [], skills: [], hub: null, authMode: 'login', toastTimer: null };
   const authView = $('#auth-view');
   const appView = $('#app-view');
   const authForm = $('#auth-form');
@@ -73,9 +73,89 @@
     const isAdmin = state.user.roles?.includes('Admin');
     $('#new-resource-button').classList.toggle('hidden', !isAdmin);
     $('#admin-bookings-panel').classList.toggle('hidden', !isAdmin);
+    $('#skill-admin-actions').classList.toggle('hidden', !isAdmin);
     await loadResources();
     if (isAdmin) await loadAllBookings();
+    await Promise.all([loadSkills(), checkAiStatus()]);
     await connectHub();
+  }
+
+  async function checkAiStatus() {
+    try { $('#ai-unavailable').classList.toggle('hidden', (await api('/api/ai/status')).available); }
+    catch { $('#ai-unavailable').classList.remove('hidden'); }
+  }
+
+  function showView(viewId) {
+    for (const id of ['booking-view', 'my-bookings-view', 'ai-view', 'skills-view', 'help-view']) $(`#${id}`).classList.toggle('hidden', id !== viewId);
+    document.querySelectorAll('[data-view]').forEach(tab => tab.classList.toggle('active', tab.dataset.view === viewId));
+    if (viewId === 'skills-view') loadSkills();
+    if (viewId === 'my-bookings-view') loadMyBookings();
+  }
+
+  async function loadMyBookings() {
+    try {
+      const bookings = await api('/api/bookings/me');
+      const list = $('#my-bookings-list'); list.replaceChildren();
+      $('#my-bookings-empty').classList.toggle('hidden', bookings.length > 0);
+      for (const booking of bookings) {
+        const row = document.createElement('div'); row.className = 'booking-row';
+        row.innerHTML = `<span>${escapeHtml(booking.resourceName)}</span><span>${new Date(booking.slotStartUtc).toLocaleString()} – ${new Date(booking.slotEndUtc).toLocaleTimeString()}</span><span>Booked ${new Date(booking.createdAtUtc).toLocaleDateString()}</span>`;
+        list.append(row);
+      }
+    } catch (error) { toast(error.message, true); }
+  }
+
+  async function loadSkills() {
+    try {
+      state.skills = await api('/api/ai/skills');
+      $('#skill-empty').classList.toggle('hidden', state.skills.length > 0);
+      const list = $('#skill-list'); list.replaceChildren();
+      for (const skill of state.skills) {
+        const row = document.createElement('article'); row.className = 'skill-row';
+        const instructions = skill.instructions.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+        row.innerHTML = `<div class="skill-info"><div class="skill-title"><strong>${escapeHtml(skill.name)}</strong><span class="skill-status ${skill.isActive ? 'active' : 'draft'}">${skill.isActive ? 'Active' : 'Draft'}</span></div><p>${escapeHtml(skill.description)}</p><small>Version ${skill.version} · ${skill.instructions.length} instruction(s)</small><details><summary>View instructions</summary><ul>${instructions}</ul></details></div>`;
+        if (state.user?.roles?.includes('Admin')) {
+          const actions = document.createElement('div'); actions.className = 'skill-actions';
+          actions.innerHTML = `<button type="button" class="button button-quiet" data-action="edit">Edit</button><button type="button" class="button button-quiet" data-action="toggle">${skill.isActive ? 'Deactivate' : 'Activate'}</button><button type="button" class="button button-quiet danger-text" data-action="delete">Delete</button>`;
+          actions.querySelector('[data-action="edit"]').addEventListener('click', () => editSkill(skill));
+          actions.querySelector('[data-action="toggle"]').addEventListener('click', async () => {
+            try { await api(`/api/ai/skills/${skill.id}/${skill.isActive ? 'deactivate' : 'activate'}`, { method: 'POST' }); await loadSkills(); }
+            catch (error) { toast(error.message, true); }
+          });
+          actions.querySelector('[data-action="delete"]').addEventListener('click', async () => {
+            if (!confirm(`Delete skill “${skill.name}”?`)) return;
+            try { await api(`/api/ai/skills/${skill.id}`, { method: 'DELETE' }); await loadSkills(); }
+            catch (error) { toast(error.message, true); }
+          });
+          row.append(actions);
+        }
+        list.append(row);
+      }
+    } catch (error) { toast(error.message, true); }
+  }
+
+  function editSkill(skill = null) {
+    const form = $('#skill-form'); form.reset(); form.classList.remove('hidden');
+    form.elements.id.value = skill?.id || '';
+    form.elements.name.value = skill?.name || '';
+    form.elements.description.value = skill?.description || '';
+    form.elements.instructions.value = skill?.instructions.join('\n') || '';
+    form.elements.examples.value = skill?.examples.join('\n') || '';
+    $('#skill-form-title').textContent = skill ? 'Edit skill' : 'Review skill draft';
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  async function askAi(message) {
+    $('#ai-message').value = message;
+    $('#ai-answer').classList.remove('hidden'); $('#ai-answer').textContent = 'Thinking…';
+    try {
+      const result = await api('/api/ai/chat', { method: 'POST', body: JSON.stringify({ message }) });
+      $('#ai-answer').textContent = result.answer;
+      $('#ai-unavailable').classList.add('hidden');
+    } catch (error) {
+      $('#ai-answer').textContent = error.message;
+      if (error.status === 503) $('#ai-unavailable').classList.remove('hidden');
+    }
   }
 
   async function loadResources() {
@@ -264,6 +344,42 @@
   function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]); }
 
   document.querySelectorAll('[data-auth-mode]').forEach(tab => tab.addEventListener('click', () => setAuthMode(tab.dataset.authMode)));
+  document.querySelectorAll('[data-view]').forEach(tab => tab.addEventListener('click', () => showView(tab.dataset.view)));
+  document.querySelectorAll('.suggestion').forEach(button => button.addEventListener('click', () => askAi(button.textContent)));
+  $('#ai-chat-form').addEventListener('submit', async event => { event.preventDefault(); await askAi($('#ai-message').value.trim()); });
+  $('#skill-new').addEventListener('click', () => editSkill());
+  $('#skill-cancel').addEventListener('click', () => $('#skill-form').classList.add('hidden'));
+  $('#skill-generate').addEventListener('click', async () => {
+    const description = window.prompt('Describe what this reusable assistant skill should help with:');
+    if (!description?.trim()) return;
+    try {
+      const draft = await api('/api/ai/skills/generate', { method: 'POST', body: JSON.stringify({ description }) });
+      editSkill(draft);
+      $('#skill-form').classList.remove('hidden');
+      toast('AI draft generated. Review it and save it before activation.');
+    } catch (error) { toast(error.message, true); }
+  });
+  $('#skill-upload').addEventListener('change', async event => {
+    const file = event.target.files[0]; if (!file) return;
+    const formData = new FormData(); formData.append('file', file);
+    try {
+      const response = await fetch('/api/ai/skills/upload', { method: 'POST', credentials: 'same-origin', body: formData });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || result.title || 'Upload failed');
+      editSkill(result); toast('Upload validated as an inactive draft. Review before saving.');
+    } catch (error) { toast(error.message, true); }
+    finally { event.target.value = ''; }
+  });
+  $('#skill-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = { name: form.elements.name.value, description: form.elements.description.value, instructions: form.elements.instructions.value.split('\n').map(x => x.trim()).filter(Boolean), examples: form.elements.examples.value.split('\n').map(x => x.trim()).filter(Boolean) };
+    try {
+      const id = form.elements.id.value;
+      await api(id ? `/api/ai/skills/${id}` : '/api/ai/skills', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+      form.classList.add('hidden'); toast(id ? 'Skill updated.' : 'Skill saved as an inactive draft.'); await loadSkills();
+    } catch (error) { toast(error.message, true); }
+  });
   authForm.addEventListener('submit', submitAuth);
   $('#logout-button').addEventListener('click', async () => {
     try { await api('/api/auth/logout', { method: 'POST' }); } finally { window.location.reload(); }
