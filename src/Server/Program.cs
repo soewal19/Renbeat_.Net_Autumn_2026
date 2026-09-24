@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.InMemory;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using RoomBooking.Server.Infrastructure.Identity;
 using RoomBooking.Server.Infrastructure.Persistence;
 using RoomBooking.Server.Infrastructure.Persistence.Entities;
