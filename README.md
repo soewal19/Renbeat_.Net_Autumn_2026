@@ -1,5 +1,6 @@
 # Reenbit Meeting Room Booking System
 
+
 Reenbit тестовое задание: система бронирования переговорных комнат с **гарантированным контролем конкурентности** и **реал-тайм обновлениями** через Azure SignalR.
 
 ---
@@ -294,7 +295,7 @@ The web app uses Key Vault references for SQL, Azure SignalR, and the initial ad
 
 The App Service stores the Data Protection key ring under its persistent shared `/home` storage so authentication cookies work across instances and package deployments. Forwarded headers are enabled so HTTPS redirection recognizes the original client scheme behind the App Service proxy.
 
-To deploy from GitHub Actions, push the repository and configure these repository secrets: `AZURE_CREDENTIALS`, `AZURE_SUBSCRIPTION_ID`, `SQL_ADMIN_PASSWORD`, and `APP_ADMIN_PASSWORD`. The Azure identity needs subscription deployment permissions, including permission to create role assignments for the App Service managed identity. Run **CI - Build & Test** with `workflow_dispatch`; the deploy job runs only after all required tests pass, provisions the Bicep resources, deploys the published package, and prints the app URL in the workflow summary.
+To deploy from GitHub Actions, push the repository and configure these repository secrets: `AZURE_CREDENTIALS`, `AZURE_SUBSCRIPTION_ID`, `SQL_ADMIN_PASSWORD`, and `APP_ADMIN_PASSWORD`. Optionally set `GROQ_API_KEY` to store the secret in Key Vault and expose it to App Service through a Key Vault reference; without it, only AI is unavailable. The Azure identity needs subscription deployment permissions, including permission to create role assignments for the App Service managed identity. Run **CI - Build & Test** with `workflow_dispatch`; the deploy job runs only after all required tests pass, provisions the Bicep resources, deploys the published package, and prints the app URL in the workflow summary.
 
 ---
 
@@ -364,3 +365,33 @@ To deploy from GitHub Actions, push the repository and configure these repositor
    ```
    Ожидаемый итог: `1 x 201`, `19 x 409`, `COUNT == 1` в БД.
 7. **SignalR**: подключиться к `/hubs/schedule` под identity cookie, `JoinResource(id)`, сделать бронирование из другого клиента → убедиться, что `SlotBooked` приходит без page refresh.
+
+## Optional AI, Skills and Help
+
+The AI feature is an optional server-side Groq integration. It does not participate in booking creation and is not required for authentication, room browsing, schedules, booking concurrency, or SignalR. The database unique index on `Booking.TimeSlotId` remains the sole authority preventing double booking.
+
+- The browser calls `POST /api/ai/chat`; the server calls Groq using `GROQ_API_KEY` and `GROQ_MODEL` (default `llama-3.3-70b-versatile`). The key is never returned to the browser.
+- The assistant has an explicit read-only allowlist: `get_resources`, `get_schedule`, `get_my_bookings`, and `get_booking_policy`. It cannot create or modify bookings, run SQL/code, discover tools, or access arbitrary URLs.
+- Skills are plain text stored in the `AiSkills` table. Admins can create, edit, activate, deactivate and delete them. AI generation and `.md`/`.txt`/`.json` uploads return drafts; saving creates an inactive record, and activation is a separate admin action. Uploads are UTF-8 validated, limited to 64 KB and never written to disk or executed.
+- If the Groq key is missing, the AI endpoints return 503 and the UI states that AI is unavailable. The booking system continues to work.
+- The Help tab explains booking, 409 conflicts, SignalR, roles and the optional AI features. Swagger UI is available at `/swagger` in Development only.
+- C4 diagrams live in [`docs/architecture/`](docs/architecture/): context, container, component and deployment. They document the current static same-origin HTML/CSS/JavaScript client. This repository does not currently contain Blazor WebAssembly; the pasted task context mentions Blazor, but that is not the checked-in architecture.
+
+Local optional AI configuration (never commit the key):
+
+```powershell
+$env:GROQ_API_KEY = "<your server-side Groq key>"
+$env:GROQ_MODEL = "llama-3.3-70b-versatile"
+dotnet run --project src/Server/RoomBooking.Server.csproj
+```
+
+For Azure, configure the optional `GROQ_API_KEY` GitHub secret before deployment; Bicep stores it in Key Vault and App Service receives a Key Vault reference. `GROQ_MODEL` defaults in App Service configuration and can be changed there. Do not put the key in `wwwroot`, JavaScript, or browser-visible configuration. Deployment without the optional key is supported. The AI endpoints are limited to 15 requests per minute per user/IP per app instance; this is abuse protection, not a globally coordinated quota across scaled instances.
+
+### AI checks
+
+```bash
+dotnet test tests/UnitTests/RoomBooking.UnitTests.csproj --configuration Release
+dotnet test tests/IntegrationTests/RoomBooking.IntegrationTests.csproj --configuration Release
+```
+
+Unit coverage includes upload validation, invalid/missing provider behavior, tool allowlisting, user-scoped booking reads, and draft Skill lifecycle. Integration coverage checks authentication and admin-only Skill management. Integration/concurrency tests require Docker for SQL Server Testcontainers.

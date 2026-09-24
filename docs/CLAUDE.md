@@ -1000,3 +1000,15 @@ The highest-priority rule is:
 > The system must remain correct when multiple users attempt to book the same slot at the same time.
 
 Any change that could weaken this guarantee requires explicit review and updated tests/documentation.
+
+---
+
+## 29. Optional AI, Skills, Help, C4 and OpenAPI
+
+- Keep AI isolated from booking. `IAiAssistant` is provider-neutral at the endpoint boundary; Groq is optional and configured only on the server through `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_ENDPOINT`, and `GROQ_TIMEOUT_SECONDS` (or `Groq:*` config). No startup dependency on credentials.
+- AI can use only explicit read-only tools. Tool execution uses application services; the model never receives `AppDbContext`, SQL access, filesystem, secrets, arbitrary URLs, or executable code. Never let AI book; if that changes, it must invoke the existing booking command and preserve `UNIQUE(TimeSlotId)`.
+- Skills are untrusted data/instructions. Admin-only mutation; generated/uploaded data is validated and shown as a draft, persisted inactive, then separately approved/activated. `.md`, `.txt`, and `.json` only; valid UTF-8; 64 KB max; never execute uploaded content.
+- Core features must continue if Groq is missing, times out, fails or returns malformed output. Return safe 503 errors, keep sensitive prompts and provider responses out of logs, and never expose raw provider exceptions.
+- Update Mermaid C1–C4 files in `docs/architecture/`, README and this guide to reflect the shipped implementation. The current frontend is static same-origin HTML/CSS/JavaScript, not Blazor WebAssembly.
+- Help should explain getting started, booking and 409 conflicts, real-time updates, roles, AI, Skills, OpenAPI and architecture. Swagger is available in Development only.
+- Test provider failures, allowlist/user scoping, Skills lifecycle/authorization, malformed and unsupported uploads, and retain all original SQL concurrency tests unchanged.
