@@ -283,8 +283,7 @@ public static class EndpointMappings
             var roles = await userManager.GetRolesAsync(user);
             return TypedResults.Ok(new UserDto(user.Id, user.Email!, user.DisplayName, roles.ToList()));
         })
-        .WithName("Register")
-        .WithOpenApi();
+        .WithName("Register");
 
         group.MapPost("/login", async Task<Results<Ok<UserDto>, UnauthorizedHttpResult, ValidationProblem>> (
             LoginRequest req,
@@ -305,16 +304,14 @@ public static class EndpointMappings
             var roles = await userManager.GetRolesAsync(user);
             return TypedResults.Ok(new UserDto(user.Id, user.Email!, user.DisplayName, roles.ToList()));
         })
-        .WithName("Login")
-        .WithOpenApi();
+        .WithName("Login");
 
         group.MapPost("/logout", async (SignInManager<ApplicationUser> signIn) =>
         {
             await signIn.SignOutAsync();
             return TypedResults.Ok();
         })
-        .WithName("Logout")
-        .WithOpenApi();
+        .WithName("Logout");
 
         group.MapGet("/me", [Authorize] async Task<Results<Ok<UserDto>, UnauthorizedHttpResult>> (
             UserManager<ApplicationUser> userManager,
@@ -327,8 +324,7 @@ public static class EndpointMappings
             var roles = await userManager.GetRolesAsync(user);
             return TypedResults.Ok(new UserDto(user.Id, user.Email!, user.DisplayName, roles.ToList()));
         })
-        .WithName("Me")
-        .WithOpenApi();
+        .WithName("Me");
 
         return group;
     }
@@ -343,8 +339,7 @@ public static class EndpointMappings
                 .ToListAsync(ct);
             return TypedResults.Ok(resources);
         })
-        .WithName("GetResources")
-        .WithOpenApi();
+        .WithName("GetResources");
 
         group.MapGet("/{id:int}", async Task<Results<Ok<ResourceDto>, NotFound>> (
             int id, AppDbContext db, CancellationToken ct) =>
@@ -353,8 +348,7 @@ public static class EndpointMappings
             if (r is null) return TypedResults.NotFound();
             return TypedResults.Ok(new ResourceDto(r.Id, r.Name, r.Description, r.IsActive, r.CreatedAtUtc, r.UpdatedAtUtc));
         })
-        .WithName("GetResourceById")
-        .WithOpenApi();
+        .WithName("GetResourceById");
 
         group.MapPost("/", [Authorize(AppRoles.Admin)] async Task<Results<Created<ResourceDto>, ValidationProblem>> (
             CreateResourceRequest req,
@@ -380,8 +374,7 @@ public static class EndpointMappings
             var dto = new ResourceDto(resource.Id, resource.Name, resource.Description, resource.IsActive, resource.CreatedAtUtc, resource.UpdatedAtUtc);
             return TypedResults.Created($"/api/resources/{resource.Id}", dto);
         })
-        .WithName("CreateResource")
-        .WithOpenApi();
+        .WithName("CreateResource");
 
         group.MapPut("/{id:int}", [Authorize(AppRoles.Admin)] async Task<Results<NoContent, NotFound, ValidationProblem>> (
             int id,
@@ -403,8 +396,7 @@ public static class EndpointMappings
             await db.SaveChangesAsync(ct);
             return TypedResults.NoContent();
         })
-        .WithName("UpdateResource")
-        .WithOpenApi();
+        .WithName("UpdateResource");
 
         group.MapDelete("/{id:int}", [Authorize(AppRoles.Admin)] async Task<Results<NoContent, NotFound>> (
             int id, AppDbContext db, CancellationToken ct) =>
@@ -415,8 +407,7 @@ public static class EndpointMappings
             await db.SaveChangesAsync(ct);
             return TypedResults.NoContent();
         })
-        .WithName("DeleteResource")
-        .WithOpenApi();
+        .WithName("DeleteResource");
 
         return group;
     }
@@ -456,8 +447,7 @@ public static class EndpointMappings
 
             return TypedResults.Ok(slots);
         })
-        .WithName("GetResourceSchedule")
-        .WithOpenApi();
+        .WithName("GetResourceSchedule");
 
         group.MapPost("/{id:int}/slots", [Authorize(AppRoles.Admin)] async Task<Results<Created<List<TimeSlotDto>>, NotFound, ValidationProblem>> (
             int id,
@@ -507,8 +497,7 @@ public static class EndpointMappings
             var dtos = toAdd.Select(ts => new TimeSlotDto(ts.Id, ts.ResourceId, ts.StartUtc, ts.EndUtc, false, null)).ToList();
             return TypedResults.Created($"/api/resources/{id}/schedule", dtos);
         })
-        .WithName("CreateTimeSlots")
-        .WithOpenApi();
+        .WithName("CreateTimeSlots");
 
         return group;
     }
@@ -593,8 +582,7 @@ public static class EndpointMappings
 
             return TypedResults.Created($"/api/bookings/{created.Id}", dto);
         })
-        .WithName("CreateBooking")
-        .WithOpenApi();
+        .WithName("CreateBooking");
 
         group.MapGet("/me", [Authorize] async (
             AppDbContext db,
@@ -622,8 +610,7 @@ public static class EndpointMappings
 
             return TypedResults.Ok(bookings);
         })
-        .WithName("GetMyBookings")
-        .WithOpenApi();
+        .WithName("GetMyBookings");
 
         return group;
     }
@@ -651,8 +638,7 @@ public static class EndpointMappings
 
             return TypedResults.Ok(bookings);
         })
-        .WithName("AdminGetAllBookings")
-        .WithOpenApi();
+        .WithName("AdminGetAllBookings");
 
         return group;
     }
