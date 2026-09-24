@@ -4,6 +4,8 @@ param tags object
 param principalIdAccess string
 @secure()
 param adminPassword string
+@secure()
+param groqApiKey string = ''
 
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
@@ -37,6 +39,14 @@ resource initialAdminPassword 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: 'Seed-AdminPassword'
   properties: {
     value: adminPassword
+  }
+}
+
+resource groqApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(groqApiKey)) {
+  parent: kv
+  name: 'GroqApiKey'
+  properties: {
+    value: groqApiKey
   }
 }
 

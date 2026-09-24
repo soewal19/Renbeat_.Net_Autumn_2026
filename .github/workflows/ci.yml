@@ -112,6 +112,7 @@ jobs:
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
           APP_ADMIN_PASSWORD: ${{ secrets.APP_ADMIN_PASSWORD }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           az account set --subscription "$AZURE_SUBSCRIPTION_ID"
           RESOURCE_GROUP="rg-${APP_NAME}-${ENVIRONMENT_NAME}"
@@ -121,6 +122,7 @@ jobs:
             --template-file infra/main.bicep \
             --parameters environmentName="$ENVIRONMENT_NAME" appName="$APP_NAME" \
               sqlAdminPassword="$SQL_ADMIN_PASSWORD" adminPassword="$APP_ADMIN_PASSWORD" \
+              groqApiKey="$GROQ_API_KEY" \
             --query 'properties.outputs.appServiceName.value' -o tsv)
           az webapp deploy --resource-group "$RESOURCE_GROUP" --name "$APP_SERVICE_NAME" \
             --src-path room-booking.zip --type zip

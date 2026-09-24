@@ -10,6 +10,8 @@ param sqlAdminPassword string
 param adminEmail string = 'admin@reenbeat.com'
 @secure()
 param adminPassword string
+@secure()
+param groqApiKey string = ''
 
 param tags object = {
   project: 'reenbit-roombooking'
@@ -42,6 +44,7 @@ module appservice 'modules/appservice.bicep' = {
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
     keyVaultName: kvName
     adminEmail: adminEmail
+    groqConfigured: !empty(groqApiKey)
     tags: tags
   }
 }
@@ -95,6 +98,7 @@ module keyvault 'modules/keyvault.bicep' = {
     tags: tags
     principalIdAccess: appservice.outputs.principalId
     adminPassword: adminPassword
+    groqApiKey: groqApiKey
   }
 }
 
