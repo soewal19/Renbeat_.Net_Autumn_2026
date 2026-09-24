@@ -6,15 +6,20 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.InMemory;
-using Microsoft.OpenApi;
 using RoomBooking.Server.Infrastructure.Identity;
 using RoomBooking.Server.Infrastructure.Persistence;
 using RoomBooking.Server.Infrastructure.Persistence.Entities;
 using RoomBooking.Server.Infrastructure.SignalR.Hubs;
+using RoomBooking.Server.Features.Ai;
 using RoomBooking.Shared.Dtos.Auth;
 using RoomBooking.Shared.Dtos.Bookings;
 using RoomBooking.Shared.Dtos.Resources;
@@ -25,16 +30,7 @@ using RegisterRequest = RoomBooking.Shared.Dtos.Auth.RegisterRequest;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo
-    {
-        Title = "RoomBooking API",
-        Version = "v1",
-        Description = "Meeting Room Booking System with concurrency control"
-    });
-});
+builder.Services.AddOpenApi();
 
 builder.Services.AddProblemDetails(options =>
 {
@@ -51,6 +47,11 @@ builder.Services.AddProblemDetails(options =>
             ctx.HttpContext.Response.StatusCode = StatusCodes.Status409Conflict;
         }
     };
+});
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 80 * 1024;
+    options.ValueCountLimit = 4;
 });
 
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -83,9 +84,39 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddIdentityCookies(options => { });
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.Events.OnRedirectToLogin = context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
+    };
+    options.Events.OnRedirectToAccessDenied = context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return Task.CompletedTask;
+    };
+});
 
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(AppRoles.Admin, policy => policy.RequireRole(AppRoles.Admin));
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/problem+json";
+        await context.HttpContext.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "AI request limit reached",
+            Detail = "Wait a minute before sending another AI request."
+        }, cancellationToken);
+    };
+    options.AddPolicy("ai", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 15, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+});
 
 var dpKeysDir = builder.Environment.IsDevelopment()
     ? Path.Combine(builder.Environment.ContentRootPath, "bin", "dataprotection-keys")
@@ -111,6 +142,21 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<IAiToolService, AiToolService>();
+builder.Services.AddScoped<IAiSkillService, AiSkillService>();
+builder.Services.AddOptions<GroqOptions>().Configure(options =>
+{
+    options.ApiKey = builder.Configuration["GROQ_API_KEY"] ?? builder.Configuration["Groq:ApiKey"] ?? string.Empty;
+    options.Model = builder.Configuration["GROQ_MODEL"] ?? builder.Configuration["Groq:Model"] ?? options.Model;
+    options.Endpoint = builder.Configuration["GROQ_ENDPOINT"] ?? builder.Configuration["Groq:Endpoint"] ?? options.Endpoint;
+    if (int.TryParse(builder.Configuration["GROQ_TIMEOUT_SECONDS"] ?? builder.Configuration["Groq:TimeoutSeconds"], out var timeout))
+        options.TimeoutSeconds = Math.Clamp(timeout, 1, 120);
+});
+builder.Services.AddHttpClient<IAiAssistant, GroqAiAssistant>((services, http) =>
+{
+    var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<GroqOptions>>().Value;
+    http.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 1, 120));
+});
 
 var app = builder.Build();
 
@@ -119,8 +165,12 @@ app.UseStatusCodePages();
 
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c => c.DisplayRequestDuration());
+    app.MapOpenApi();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/openapi/v1.json", "RoomBooking API v1");
+        c.DisplayRequestDuration();
+    });
 }
 
 if (!app.Environment.IsDevelopment())
@@ -130,8 +180,23 @@ if (!app.Environment.IsDevelopment())
 app.UseCors("AllowAll");
 app.UseDefaultFiles();
 app.UseStaticFiles();
+var architectureDocsPath = Path.Combine(app.Environment.ContentRootPath, "docs", "architecture");
+if (!Directory.Exists(architectureDocsPath))
+    architectureDocsPath = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "..", "..", "docs", "architecture"));
+var docsContentTypes = new FileExtensionContentTypeProvider();
+docsContentTypes.Mappings[".md"] = "text/markdown; charset=utf-8";
+if (Directory.Exists(architectureDocsPath))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(architectureDocsPath),
+        RequestPath = "/docs/architecture",
+        ContentTypeProvider = docsContentTypes
+    });
+}
 app.UseRouting();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapHub<ScheduleHub>("/hubs/schedule")
@@ -139,6 +204,7 @@ app.MapHub<ScheduleHub>("/hubs/schedule")
 
 app.MapGroup("/api/auth")
    .WithTags("Auth")
+   .WithDescription("Identity registration and cookie session endpoints.")
    .MapAuthApi();
 
 app.MapGroup("/api/resources")
@@ -155,8 +221,12 @@ app.MapGroup("/api/bookings")
 
 app.MapGroup("/api/admin")
    .WithTags("Admin")
+   .WithDescription("All endpoints require the Admin role.")
    .RequireAuthorization(AppRoles.Admin)
    .MapAdminApi();
+
+app.MapGroup("/api")
+   .MapAiApi();
 
 await StartupTasks.ApplyMigrationsAndSeedAsync(app);
 
@@ -582,7 +652,15 @@ public static class EndpointMappings
 
             return TypedResults.Created($"/api/bookings/{created.Id}", dto);
         })
-        .WithName("CreateBooking");
+        .WithName("CreateBooking")
+        .WithSummary("Book one available time slot")
+        .WithDescription("An authenticated user attempts an insert protected by the database unique index on Booking.TimeSlotId. Exactly one concurrent request can succeed; competitors receive 409 Conflict.")
+        .Produces<BookingDto>(StatusCodes.Status201Created)
+        .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
 
         group.MapGet("/me", [Authorize] async (
             AppDbContext db,
@@ -610,7 +688,11 @@ public static class EndpointMappings
 
             return TypedResults.Ok(bookings);
         })
-        .WithName("GetMyBookings");
+        .WithName("GetMyBookings")
+        .WithSummary("List the authenticated user's bookings")
+        .Produces<List<BookingDto>>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden);
 
         return group;
     }

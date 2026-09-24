@@ -16,6 +16,7 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Resource> Resources => Set<Resource>();
     public DbSet<TimeSlot> TimeSlots => Set<TimeSlot>();
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<AiSkill> AiSkills => Set<AiSkill>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -24,5 +25,6 @@ public sealed class AppDbContext : IdentityDbContext<ApplicationUser>
         builder.ApplyConfiguration(new ResourceConfiguration());
         builder.ApplyConfiguration(new TimeSlotConfiguration());
         builder.ApplyConfiguration(new BookingConfiguration());
+        builder.ApplyConfiguration(new AiSkillConfiguration());
     }
 }
