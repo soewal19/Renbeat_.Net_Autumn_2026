@@ -14,7 +14,7 @@ public static class AiEndpoints
         var ai = group.MapGroup("/ai").WithTags("AI").WithDescription("Requires an authenticated Identity cookie. The optional Groq provider runs only on the server; provider failures return a safe unavailable response.").RequireAuthorization();
         ai.MapPost("/chat", Chat).RequireRateLimiting("ai").WithName("AiChat")
             .WithSummary("Ask the optional meeting-room AI assistant")
-            .WithDescription("Uses only allowlisted read-only tools. Requires authentication. Returns 503 when Groq is not configured or unavailable.")
+            .WithDescription("Requires authentication. Uses allowlisted data tools and enables autonomous booking only for an explicit booking instruction with an exact matching future slot. Returns 503 when Groq is not configured or unavailable.")
             .Produces<AiChatResponse>().ProducesValidationProblem().ProducesProblem(StatusCodes.Status401Unauthorized).ProducesProblem(StatusCodes.Status429TooManyRequests).ProducesProblem(StatusCodes.Status503ServiceUnavailable);
         ai.MapGet("/status", (IAiAssistant assistant) => Results.Ok(new { available = assistant.IsAvailable }))
             .WithName("AiStatus").WithSummary("Check whether the optional AI provider is configured");
@@ -44,9 +44,10 @@ public static class AiEndpoints
         var timer = Stopwatch.StartNew();
         try
         {
-            var answer = await assistant.ChatAsync(request.Message.Trim(), currentUser.UserId!, ct);
+            var timeZone = ResolveTimeZone(request.TimeZoneId);
+            var result = await assistant.ChatAsync(request.Message.Trim(), currentUser.UserId!, ct, timeZone);
             loggerFactory.CreateLogger("AiOperations").LogInformation("AI operation {Operation} provider {Provider} durationMs {DurationMs} outcome {Outcome}", "chat", "Groq", timer.ElapsedMilliseconds, "success");
-            return Results.Ok(new AiChatResponse(answer));
+            return Results.Ok(new AiChatResponse(result.Answer, result.BookingProposal, result.BookingReceipt));
         }
         catch (AiProviderUnavailableException ex)
         {
@@ -159,4 +160,13 @@ public static class AiEndpoints
     private static SkillDefinition ToDefinition(SkillWriteRequest request) => new(request.Name, request.Description, request.Instructions, request.Examples ?? [], 1);
     private static IResult Validation(string key, string message) => Results.ValidationProblem(new Dictionary<string, string[]> { [key] = [message] });
     private static IResult Validation(IEnumerable<string> errors) => Results.ValidationProblem(new Dictionary<string, string[]> { ["skill"] = errors.ToArray() });
+
+    private static string ResolveTimeZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId) || timeZoneId.Length > 64 || !System.Text.RegularExpressions.Regex.IsMatch(timeZoneId, @"^[A-Za-z0-9_+/-]+$"))
+            return "UTC";
+        try { return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId).Id; }
+        catch (TimeZoneNotFoundException) { return "UTC"; }
+        catch (InvalidTimeZoneException) { return "UTC"; }
+    }
 }

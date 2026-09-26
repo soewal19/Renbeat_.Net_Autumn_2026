@@ -103,12 +103,132 @@ public sealed class AiFeatureTests
         var resources = await service.ExecuteAsync("get_resources", "{}", user1.Id, CancellationToken.None);
         resources.Should().Contain("Cedar");
         var mine = await service.ExecuteAsync("get_my_bookings", "{}", user1.Id, CancellationToken.None);
-        mine.Should().Contain("20").And.NotContain("21");
+        using (var mineJson = JsonDocument.Parse(mine))
+        {
+            var bookingIds = mineJson.RootElement.EnumerateArray()
+                .Select(booking => booking.GetProperty("Id").GetInt32())
+                .ToArray();
+            bookingIds.Should().ContainSingle().Which.Should().Be(20);
+            bookingIds.Should().NotContain(21);
+        }
         var day = DateOnly.FromDateTime(slot.StartUtc.UtcDateTime).ToString("yyyy-MM-dd");
         var schedule = await service.ExecuteAsync("get_schedule", $"{{\"resourceId\":7,\"date\":\"{day}\"}}", user1.Id, CancellationToken.None);
         schedule.Should().Contain("IsBooked").And.Contain("true");
         await FluentActions.Awaiting(() => service.ExecuteAsync("run_sql", "{}", user1.Id, CancellationToken.None))
             .Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task AiTool_PreparesOnlyAvailableFutureBookingWithoutCreatingIt()
+    {
+        using var db = CreateDb(nameof(AiTool_PreparesOnlyAvailableFutureBookingWithoutCreatingIt));
+        var room = new Resource { Id = 7, Name = "Cedar", IsActive = true };
+        var slotStart = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1).AddHours(10), TimeSpan.Zero);
+        var slot = new TimeSlot { Id = 9, ResourceId = room.Id, Resource = room, StartUtc = slotStart, EndUtc = slotStart.AddHours(1) };
+        db.Resources.Add(room);
+        db.TimeSlots.Add(slot);
+        await db.SaveChangesAsync();
+
+        var service = new AiToolService(db, NullLogger<AiToolService>.Instance);
+        var result = await service.ExecuteAsync("propose_booking", "{\"timeSlotId\":9}", "user-1", CancellationToken.None);
+        using var json = JsonDocument.Parse(result);
+        json.RootElement.GetProperty("available").GetBoolean().Should().BeTrue();
+        json.RootElement.GetProperty("timeSlotId").GetInt32().Should().Be(9);
+        (await db.Bookings.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AiTool_BooksOnlyWhenAutonomousBookingWasExplicitlyEnabled()
+    {
+        using var db = CreateDb(nameof(AiTool_BooksOnlyWhenAutonomousBookingWasExplicitlyEnabled));
+        var user = new ApplicationUser { Id = "user-1", UserName = "one@test.local", Email = "one@test.local" };
+        var room = new Resource { Id = 7, Name = "Cedar", IsActive = true };
+        var slotStart = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1).AddHours(10), TimeSpan.Zero);
+        var slot = new TimeSlot { Id = 9, ResourceId = room.Id, Resource = room, StartUtc = slotStart, EndUtc = slotStart.AddHours(1) };
+        db.Users.Add(user); db.Resources.Add(room); db.TimeSlots.Add(slot); await db.SaveChangesAsync();
+        var service = new AiToolService(db, NullLogger<AiToolService>.Instance);
+
+        var denied = await service.ExecuteAsync("book_slot", "{\"timeSlotId\":9}", user.Id, CancellationToken.None);
+        JsonDocument.Parse(denied).RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+        (await db.Bookings.CountAsync()).Should().Be(0);
+
+        var localDate = DateOnly.FromDateTime(slotStart.UtcDateTime).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var wrongTime = await service.ExecuteAsync("book_slot", $"{{\"resourceId\":7,\"date\":\"{localDate}\",\"startTime\":\"09:00\"}}", user.Id, CancellationToken.None, allowAutonomousBooking: true);
+        JsonDocument.Parse(wrongTime).RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+        (await db.Bookings.CountAsync()).Should().Be(0);
+
+        var booked = await service.ExecuteAsync("book_slot", $"{{\"resourceId\":7,\"date\":\"{localDate}\",\"startTime\":\"10:00\"}}", user.Id, CancellationToken.None, allowAutonomousBooking: true);
+        using var result = JsonDocument.Parse(booked);
+        result.RootElement.GetProperty("success").GetBoolean().Should().BeTrue();
+        result.RootElement.GetProperty("resourceName").GetString().Should().Be("Cedar");
+        var booking = await db.Bookings.SingleAsync();
+        booking.UserId.Should().Be(user.Id);
+        booking.IsAiGenerated.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("Book Cedar tomorrow at 10:00", true)]
+    [InlineData("Please reserve Cedar tomorrow at 10:00", true)]
+    [InlineData("Can you book Cedar tomorrow at 10:00?", true)]
+    [InlineData("Забронируй Cedar завтра в 10:00", true)]
+    [InlineData("Я хочу забронировать Cedar завтра в 10:00", true)]
+    [InlineData("Which rooms are available tomorrow?", false)]
+    [InlineData("Do you support booking rooms?", false)]
+    [InlineData("Book Cedar tomorrow at 10, but do not actually book it", false)]
+    [InlineData("Забронируй Cedar завтра, но не бронируй", false)]
+    public void BookingIntentDetector_OnlyAllowsExplicitActionOpening(string message, bool expected)
+        => BookingIntentDetector.IsExplicitBookingCommand(message).Should().Be(expected);
+
+    [Fact]
+    public async Task GroqAssistant_FailsOverToConfiguredModelOnRateLimit()
+    {
+        using var db = CreateDb(nameof(GroqAssistant_FailsOverToConfiguredModelOnRateLimit));
+        var requestedModels = new List<string>();
+        var handler = new RecordingHandler(request =>
+        {
+            using var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            requestedModels.Add(body.RootElement.GetProperty("model").GetString()!);
+            return requestedModels.Count == 1
+                ? new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"choices\":[{\"message\":{\"content\":\"Hello from fallback.\"}}]}")
+                };
+        });
+        var assistant = CreateAssistant(db, handler, new GroqOptions
+        {
+            ApiKey = "test-only",
+            Model = "primary-model",
+            FallbackModel = "fallback-model"
+        });
+
+        var answer = await assistant.ChatAsync("Hello", "user-1", CancellationToken.None);
+
+        answer.Answer.Should().Be("Hello from fallback.");
+        requestedModels.Should().Equal("primary-model", "fallback-model");
+    }
+
+    [Fact]
+    public async Task GroqAssistant_DoesNotHideInvalidApiKeyWithModelFailover()
+    {
+        using var db = CreateDb(nameof(GroqAssistant_DoesNotHideInvalidApiKeyWithModelFailover));
+        var requestedModels = new List<string>();
+        var handler = new RecordingHandler(request =>
+        {
+            using var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            requestedModels.Add(body.RootElement.GetProperty("model").GetString()!);
+            return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        });
+        var assistant = CreateAssistant(db, handler, new GroqOptions
+        {
+            ApiKey = "test-only",
+            Model = "primary-model",
+            FallbackModel = "fallback-model"
+        });
+
+        await FluentActions.Awaiting(() => assistant.ChatAsync("Hello", "user-1", CancellationToken.None))
+            .Should().ThrowAsync<AiProviderUnavailableException>();
+        requestedModels.Should().ContainSingle().Which.Should().Be("primary-model");
     }
 
     [Fact]
