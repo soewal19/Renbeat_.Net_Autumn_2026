@@ -12,6 +12,8 @@ public sealed class Resource
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
+    public byte[]? ImageData { get; set; }
+    public string? ImageContentType { get; set; }
 
     public ICollection<TimeSlot> TimeSlots { get; set; } = new List<TimeSlot>();
 }

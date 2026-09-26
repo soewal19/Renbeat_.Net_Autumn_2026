@@ -7,4 +7,5 @@ public sealed record ResourceDto(
     string Description,
     bool IsActive,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc,
+    string ImageUrl);

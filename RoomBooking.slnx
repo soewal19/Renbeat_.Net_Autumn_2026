@@ -6,6 +6,9 @@
   <Folder Name="/src/Shared/">
     <Project Path="src/Shared/RoomBooking.Shared.csproj" />
   </Folder>
+  <Folder Name="/src/Client/">
+    <Project Path="src/Client/RoomBooking.Client/RoomBooking.Client.csproj" />
+  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/ConcurrencyTests/">
     <Project Path="tests/ConcurrencyTests/RoomBooking.ConcurrencyTests.csproj" />

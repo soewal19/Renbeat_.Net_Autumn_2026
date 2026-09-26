@@ -14,6 +14,7 @@ public static class ScheduleHubMethods
 
     /// <summary>Server → Client: a slot was successfully booked.</summary>
     public const string SlotBooked = nameof(SlotBooked);
+    public const string SlotCancelled = nameof(SlotCancelled);
 }
 
 /// <summary>
@@ -25,3 +26,5 @@ public sealed record SlotBookedEvent(
     int ResourceId,
     int BookingId,
     DateTimeOffset BookedAtUtc);
+
+public sealed record SlotCancelledEvent(int SlotId, int ResourceId, int BookingId);

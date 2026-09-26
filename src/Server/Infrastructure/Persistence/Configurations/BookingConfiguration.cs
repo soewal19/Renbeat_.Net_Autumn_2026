@@ -29,6 +29,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
 
         builder.Property(b => b.UserId).IsRequired();
         builder.Property(b => b.CreatedAtUtc).IsRequired();
+        builder.Property(b => b.IsAiGenerated).HasDefaultValue(false).IsRequired();
 
         builder.HasOne(b => b.User)
                .WithMany(u => u.Bookings)

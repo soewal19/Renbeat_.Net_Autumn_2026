@@ -13,4 +13,5 @@ public sealed record BookingDto(
     string ResourceName,
     string UserId,
     string UserEmail,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    bool IsAiGenerated = false);

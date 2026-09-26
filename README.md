@@ -1,5 +1,14 @@
 # Reenbit Meeting Room Booking System
 
+## English documentation
+
+- [User and administrator guide](docs/user-guide.md) — booking, profiles, directory, roles, troubleshooting, and AI usage.
+- [AI-assisted booking guide](docs/ai-assisted-booking.md) — explicit booking behavior, safeguards, provider configuration, and verification.
+- [C4 architecture documentation](docs/architecture/README.md) — system context, containers, components, and deployment.
+- [Concurrency decision record](docs/adr/001-concurrency-strategy.md) — why the database unique constraint guarantees one booking per slot.
+
+For local development, store the seed administrator password with `dotnet user-secrets set "Seed:AdminPassword" "<strong-local-password>" --project src/Server/RoomBooking.Server.csproj`. Keep local credentials in User Secrets or environment variables; do not commit them.
+
 
 Reenbit тестовое задание: система бронирования переговорных комнат с **гарантированным контролем конкурентности** и **реал-тайм обновлениями** через Azure SignalR.
 
@@ -26,7 +35,9 @@ Reenbit тестовое задание: система бронирования
 | Просмотр своих бронирований | ✅ | ✅ |
 | Создание / редактирование / удаление ресурсов | ❌ | ✅ |
 | Создание time-slots для ресурса | ❌ | ✅ |
+| Загрузка и замена фотографии комнаты (JPEG, PNG, WebP до 10 МБ) | ❌ | ✅ |
 | Просмотр всех бронирований системы | ❌ | ✅ |
+| Аналитика бронирований и загрузки комнат | ❌ | ✅ |
 
 ---
 
@@ -63,6 +74,7 @@ Reenbit тестовое задание: система бронирования
   - `Infrastructure/SignalR/` — `ScheduleHub`
   - `Features` — реализованы inline в `Program.cs` via MapGroup endpoints (Auth / Resources / Schedule / Bookings / Admin)
 - `src/Shared/` — DTO, SignalR message contracts
+- `src/Client/RoomBooking.Client/` — Blazor WebAssembly UI, typed HTTP/SignalR clients
 - `tests/UnitTests/` — валидаторы, хелперы
 - `tests/IntegrationTests/` — API + auth (WebApplicationFactory + Testcontainers SQL Server)
 - `tests/ConcurrencyTests/` — **обязательный** тест конкурентности, доказывающий инвариант
@@ -74,15 +86,16 @@ Reenbit тестовое задание: система бронирования
 | Область | Технологии |
 |---|---|
 | Backend | .NET 10, ASP.NET Core, Minimal APIs, ProblemDetails |
+| Frontend | Blazor Web App, Interactive WebAssembly, Razor components, typed C# client services |
 | ORM / DB | Entity Framework Core, SQL Server provider, Migrations |
 | Auth | ASP.NET Core Identity (IdentityDbContext), cookie auth, Roles |
 | Real-time | ASP.NET Core SignalR → Azure SignalR Service |
-| API docs | Swagger / OpenAPI (Swashbuckle) |
+| API docs | ASP.NET Core OpenAPI + Swagger UI (Development only) |
 | Validation | FluentValidation |
 | Tests | xUnit, FluentAssertions, WebApplicationFactory, Testcontainers.MsSql |
 | Infra as Code | Bicep (`infra/`) |
 | CI/CD | GitHub Actions (`.github/workflows/ci.yml`) |
-| Observability | Application Insights (в Bicep) |
+| Observability | Application Insights + Azure Monitor OpenTelemetry distro (connection string based) |
 
 ---
 
@@ -217,7 +230,7 @@ dotnet build
 dotnet run --project src/Server/RoomBooking.Server.csproj
 ```
 
-Приложение с пользовательским интерфейсом поднимется на `https://localhost:7274/`; Swagger UI доступен на `https://localhost:7274/swagger`.
+Приложение с пользовательским интерфейсом поднимется на `https://localhost:7274/`; в Development Swagger UI доступен на `https://localhost:7274/swagger`, OpenAPI JSON — `https://localhost:7274/openapi/v1.json`. Сначала вызовите `POST /api/auth/login` в Swagger UI: same-origin Identity cookie будет отправлена со следующими запросами.
 
 ### Default seed admin
 
@@ -242,8 +255,11 @@ dotnet test
 | `ConnectionStrings:DefaultConnection` | SQL Server. Если пусто → InMemory (fallback для простого `dotnet run`). |
 | `ConnectionStrings:AzureSignalR` | Connection string Azure SignalR Service. Если пусто → встроенный SignalR (локальная разработка). |
 | `Seed:AdminEmail` / `Seed:AdminPassword` | Учётка seed-админа при старте. |
+| `Seed:DemoData` | Добавляет демонстрационные записи комнат, слотов и пользователей из `wwwroot/data/directory.json`; по умолчанию выключено. Demo identities создаются без пароля и не могут войти. |
 | `ASPNETCORE_ENVIRONMENT` | `Development` / `Staging` / `Production`. |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Application Insights. |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Enables Azure Monitor OpenTelemetry export to Application Insights. |
+
+Фотографии комнат хранятся в базе данных вместе с проверенным MIME-типом; API отдаёт их через `GET /api/resources/{id}/image`. Если фото не загружено, интерфейс показывает `wwwroot/images/rooms/no_image_rooms.png`. Загрузка доступна только Admin через `POST /api/resources/{id}/image`.
 
 Никакие секреты не коммитятся. В проде рекомендуется **Managed Identity** + **Azure Key Vault**.
 
@@ -256,7 +272,8 @@ dotnet test
 ```
 Azure App Service
   ├─ ASP.NET Core Minimal API
-  └─ Static HTML/CSS/JavaScript frontend (served by ASP.NET Core)
+  ├─ Blazor Web App / Interactive WebAssembly client
+  └─ Legacy static AI workspace at /index.html
 
 Зависимости:
   ├─ Azure SQL Database (credentials supplied through Key Vault references)
@@ -293,6 +310,8 @@ az deployment sub create \
 
 The web app uses Key Vault references for SQL, Azure SignalR, and the initial admin password. Configure unique secure passwords for each environment; do not reuse the local Development seed credentials.
 
+To deploy the sample workspace data to Azure SQL, opt in with the Bicep parameter `seedDemoData=true`. The app imports the versioned `wwwroot/data/directory.json` after migrations at startup, using the existing app-to-database connection. The import is idempotent, creates sample rooms and future time slots, and creates directory-only users without passwords. Leave the parameter false for a production workspace. Directory search combines this local JSON fixture with the authenticated `/api/directory/search` database endpoint and de-duplicates by email/name.
+
 The App Service stores the Data Protection key ring under its persistent shared `/home` storage so authentication cookies work across instances and package deployments. Forwarded headers are enabled so HTTPS redirection recognizes the original client scheme behind the App Service proxy.
 
 To deploy from GitHub Actions, push the repository and configure these repository secrets: `AZURE_CREDENTIALS`, `AZURE_SUBSCRIPTION_ID`, `SQL_ADMIN_PASSWORD`, and `APP_ADMIN_PASSWORD`. Optionally set `GROQ_API_KEY` to store the secret in Key Vault and expose it to App Service through a Key Vault reference; without it, only AI is unavailable. The Azure identity needs subscription deployment permissions, including permission to create role assignments for the App Service managed identity. Run **CI - Build & Test** with `workflow_dispatch`; the deploy job runs only after all required tests pass, provisions the Bicep resources, deploys the published package, and prints the app URL in the workflow summary.
@@ -328,6 +347,8 @@ To deploy from GitHub Actions, push the repository and configure these repositor
 1. пройти автоматический concurrency-тест;
 2. обновить ADR и CLAUDE.md при смене механизма.
 
+Спецификация и acceptance map ведутся в [docs/specs/meeting-room-system.md](docs/specs/meeting-room-system.md) по SDD-подходу: требования, решения, этапы и фактические доказательства выполнения.
+
 ---
 
 ## 17. Трэйд-оффсы
@@ -345,9 +366,11 @@ To deploy from GitHub Actions, push the repository and configure these repositor
 ## 18. Известные ограничения
 
 - Time-slots задаются админом явно; автоматическая генерация календаря по повторам "каждый понедельник 10:00" не реализована.
-- Frontend is a compact same-origin HTML/CSS/JavaScript app served from `src/Server/wwwroot`; SignalR's browser client is loaded from jsDelivr.
+- Основной интерфейс — same-origin Blazor Web App с Interactive WebAssembly из `src/Client/RoomBooking.Client`; Razor-компоненты используют типизированные C# клиенты HTTP и SignalR. Старый статический AI workspace сохранён по адресу `/index.html`.
 - InMemory-провайдер EF Core **не гарантирует** UNIQUE так же, как SQL Server; интеграционные и concurrency тесты всегда ходят в настоящий SQL через Testcontainers.
 - The Azure deployment workflow requires the repository secrets listed above. No public demo URL is available until it is run in a configured Azure subscription.
+
+`APPLICATIONINSIGHTS_CONNECTION_STRING` включает официальный Azure Monitor OpenTelemetry SDK для ASP.NET Core, исходящих HTTP/SQL зависимостей, метрик и структурированных логов. Локально без connection string остаётся стандартное логирование ASP.NET Core.
 
 ---
 
@@ -368,24 +391,34 @@ To deploy from GitHub Actions, push the repository and configure these repositor
 
 ## Optional AI, Skills and Help
 
-The AI feature is an optional server-side Groq integration. It does not participate in booking creation and is not required for authentication, room browsing, schedules, booking concurrency, or SignalR. The database unique index on `Booking.TimeSlotId` remains the sole authority preventing double booking.
+The optional server-side Groq integration provides live room and schedule answers and supports autonomous booking for a clear, explicit user command. Manual booking remains available when the AI provider is unavailable. The database unique index on `Booking.TimeSlotId` remains the final authority preventing double booking.
 
-- The browser calls `POST /api/ai/chat`; the server calls Groq using `GROQ_API_KEY` and `GROQ_MODEL` (default `llama-3.3-70b-versatile`). The key is never returned to the browser.
-- The assistant has an explicit read-only allowlist: `get_resources`, `get_schedule`, `get_my_bookings`, and `get_booking_policy`. It cannot create or modify bookings, run SQL/code, discover tools, or access arbitrary URLs.
-- Skills are plain text stored in the `AiSkills` table. Admins can create, edit, activate, deactivate and delete them. AI generation and `.md`/`.txt`/`.json` uploads return drafts; saving creates an inactive record, and activation is a separate admin action. Uploads are UTF-8 validated, limited to 64 KB and never written to disk or executed.
-- If the Groq key is missing, the AI endpoints return 503 and the UI states that AI is unavailable. The booking system continues to work.
-- The Help tab explains booking, 409 conflicts, SignalR, roles and the optional AI features. Swagger UI is available at `/swagger` in Development only.
-- C4 diagrams live in [`docs/architecture/`](docs/architecture/): context, container, component and deployment. They document the current static same-origin HTML/CSS/JavaScript client. This repository does not currently contain Blazor WebAssembly; the pasted task context mentions Blazor, but that is not the checked-in architecture.
+- The browser calls `POST /api/ai/chat`; the server calls Groq using a server-side secret and configurable primary/fallback models (`openai/gpt-oss-120b` → `openai/gpt-oss-20b`). The key is never returned to the browser.
+- The assistant has an explicit tool allowlist: `get_resources`, `get_schedule`, `get_my_bookings`, `get_booking_policy`, `propose_booking`, and conditionally `book_slot`. Booking tools are exposed only when the message starts with an explicit booking instruction; negated instructions do not enable them. Tools cannot run SQL/code, access the filesystem, discover tools, or access arbitrary URLs.
+- For autonomous booking, the assistant requires a clear room, local date, and start time. The browser sends its IANA time-zone ID; the server converts the requested local time to UTC and requires an exact match with an active room's future slot. Ambiguous daylight-saving times and missing or occupied slots are rejected. The AI tool inserts directly and relies on the same unique `Booking.TimeSlotId` index as the regular booking endpoint. A duplicate-key race is returned to the assistant as a normal conflict; it never creates a second booking or returns a successful receipt.
+- Availability questions use `propose_booking`, which is read-only. The user must review and confirm its proposed slot. Directly requested bookings are marked `IsAiGenerated` and shown as **Booked by AI** in personal and admin booking lists. Ordinary booking requests cannot set this marker.
+- Users can cancel their own future bookings with `DELETE /api/bookings/{id}` or the **Cancel booking** action in **My Bookings**. Past bookings and other users' bookings cannot be cancelled through this endpoint. A `SlotCancelled` SignalR event updates active schedule viewers after the delete commits. The AI assistant does not cancel bookings itself.
+- Give the room, date, and start time in one direct request, for example: `Book Cedar on September 29 at 10:00 AM.` If a detail is unclear, the assistant asks rather than choosing for you. This chat endpoint is stateless; if it asks a follow-up, send a new complete booking command with all details.
+- On HTTP 429, 5xx, network failure, or provider timeout, the server retries with the fallback model; invalid credentials and malformed requests are returned without retry. Failover also applies to AI skill drafts. Groq account-wide quota exhaustion cannot be bypassed by another model under the same account.
+- Skills are plain text stored in the `AiSkills` table. Admins can create, edit, activate, deactivate and delete them. AI generation and `.md`/`.txt`/`.json` uploads return drafts; saving creates an inactive record, and activation is a separate admin action. Skills are supplemental untrusted text and cannot grant tools or override server authorization. Uploads are UTF-8 validated, limited to 64 KB and never written to disk or executed.
+- If the Groq key is missing, the AI endpoints return 503 and the UI states that AI is unavailable. Room search, manual booking, conflict control, cancellation and SignalR continue to work.
+- The **Help** tab explains direct AI booking, suggestions, cancellations, conflicts, SignalR, roles and provider availability. Swagger UI is available at `/swagger` in Development only.
+- The complete English user and administrator guide is [`docs/user-guide.md`](docs/user-guide.md); AI-specific operating details are in [`docs/ai-assisted-booking.md`](docs/ai-assisted-booking.md).
+- The main `/` application is Blazor WebAssembly; the retained static AI workspace is available at `/index.html`. Both use the same authenticated API, booking records and SignalR hub. C4 diagrams live in [`docs/architecture/`](docs/architecture/): context, container, component and deployment.
 
 Local optional AI configuration (never commit the key):
 
 ```powershell
-$env:GROQ_API_KEY = "<your server-side Groq key>"
-$env:GROQ_MODEL = "llama-3.3-70b-versatile"
+dotnet user-secrets init --project src/Server/RoomBooking.Server.csproj
+dotnet user-secrets set "Groq:ApiKey" "<your server-side Groq key>" --project src/Server/RoomBooking.Server.csproj
+dotnet user-secrets set "Groq:Model" "openai/gpt-oss-120b" --project src/Server/RoomBooking.Server.csproj
+dotnet user-secrets set "Groq:FallbackModel" "openai/gpt-oss-20b" --project src/Server/RoomBooking.Server.csproj
 dotnet run --project src/Server/RoomBooking.Server.csproj
 ```
 
-For Azure, configure the optional `GROQ_API_KEY` GitHub secret before deployment; Bicep stores it in Key Vault and App Service receives a Key Vault reference. `GROQ_MODEL` defaults in App Service configuration and can be changed there. Do not put the key in `wwwroot`, JavaScript, or browser-visible configuration. Deployment without the optional key is supported. The AI endpoints are limited to 15 requests per minute per user/IP per app instance; this is abuse protection, not a globally coordinated quota across scaled instances.
+For Azure, configure the optional `GROQ_API_KEY` GitHub secret before deployment; Bicep stores it in Key Vault and App Service receives a Key Vault reference. `GROQ_MODEL` and `GROQ_FALLBACK_MODEL` default in App Service configuration and can be changed there. Do not put the key in `appsettings*.json`, `wwwroot`, JavaScript, or browser-visible configuration. Deployment without the optional key is supported. The AI endpoints are limited to 15 requests per minute per user/IP per app instance; this is abuse protection, not a globally coordinated quota across scaled instances.
+
+Model failover can recover from a model-specific limit or temporary model/provider outage. Groq applies some rate limits at the organization level, so a fallback model using the same API key cannot bypass an exhausted organization-wide token/request quota. A separate provider and its own credentials would be needed for cross-provider failover.
 
 ### AI checks
 
@@ -394,4 +427,4 @@ dotnet test tests/UnitTests/RoomBooking.UnitTests.csproj --configuration Release
 dotnet test tests/IntegrationTests/RoomBooking.IntegrationTests.csproj --configuration Release
 ```
 
-Unit coverage includes upload validation, invalid/missing provider behavior, tool allowlisting, user-scoped booking reads, and draft Skill lifecycle. Integration coverage checks authentication and admin-only Skill management. Integration/concurrency tests require Docker for SQL Server Testcontainers.
+Unit coverage includes explicit/negated booking intent, autonomous tool gating, exact slot matching, AI-source attribution, upload validation, invalid/missing provider behavior, user-scoped booking reads, and draft Skill lifecycle. Integration coverage checks authentication and admin-only Skill management. Integration/concurrency tests require Docker for SQL Server Testcontainers.

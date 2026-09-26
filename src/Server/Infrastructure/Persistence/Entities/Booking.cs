@@ -33,6 +33,9 @@ public sealed class Booking
     /// <summary>When the booking was created, always in UTC.</summary>
     public DateTimeOffset CreatedAtUtc { get; set; }
 
+    /// <summary>Indicates that the authenticated user confirmed this booking through the AI assistant.</summary>
+    public bool IsAiGenerated { get; set; }
+
     public TimeSlot TimeSlot { get; set; } = null!;
     public ApplicationUser User { get; set; } = null!;
 }

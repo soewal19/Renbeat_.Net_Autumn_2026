@@ -5,4 +5,6 @@ public sealed record UserDto(
     string Id,
     string Email,
     string DisplayName,
-    IReadOnlyList<string> Roles);
+    IReadOnlyList<string> Roles,
+    string? PhoneNumber = null,
+    string? AvatarUrl = null);

@@ -2,6 +2,9 @@ using System.Security.Claims;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Components.WebAssembly.Server;
+using Azure.Monitor.OpenTelemetry.AspNetCore;
+using OpenTelemetry.Logs;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -25,12 +28,38 @@ using RoomBooking.Shared.Dtos.Bookings;
 using RoomBooking.Shared.Dtos.Resources;
 using RoomBooking.Shared.Dtos.Schedule;
 using RoomBooking.Shared.SignalR;
+using RoomBooking.Server.Components;
 using LoginRequest = RoomBooking.Shared.Dtos.Auth.LoginRequest;
 using RegisterRequest = RoomBooking.Shared.Dtos.Auth.RegisterRequest;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+// Keep local development logging on portable providers. The Windows Event Log provider can
+// throw when the process has no Event Log permissions, masking handled API errors (for example,
+// an unavailable optional AI provider) with a second exception while logging the first one.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info = new Microsoft.OpenApi.OpenApiInfo
+        {
+            Title = "RoomBooking API",
+            Version = "v1",
+            Description = "Cookie-authenticated meeting-room booking API. Booking uniqueness is enforced by the database; a competing booking receives HTTP 409."
+        };
+        return Task.CompletedTask;
+    });
+});
+builder.Services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
+if (!string.IsNullOrWhiteSpace(builder.Configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+{
+    builder.Services.AddOpenTelemetry().UseAzureMonitor();
+    builder.Services.Configure<OpenTelemetryLoggerOptions>(options => options.IncludeScopes = true);
+}
 
 builder.Services.AddProblemDetails(options =>
 {
@@ -50,7 +79,8 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 80 * 1024;
+    // Allow multipart headers/boundaries in addition to a 10 MB image; the endpoint enforces the file limit.
+    options.MultipartBodyLengthLimit = 11 * 1024 * 1024;
     options.ValueCountLimit = 4;
 });
 
@@ -134,12 +164,6 @@ if (!string.IsNullOrWhiteSpace(signalrConnStr))
 }
 
 builder.Services.AddValidatorsFromAssemblyContaining(typeof(Program));
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader().WithExposedHeaders("*"));
-});
-
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IAiToolService, AiToolService>();
@@ -148,6 +172,7 @@ builder.Services.AddOptions<GroqOptions>().Configure(options =>
 {
     options.ApiKey = builder.Configuration["GROQ_API_KEY"] ?? builder.Configuration["Groq:ApiKey"] ?? string.Empty;
     options.Model = builder.Configuration["GROQ_MODEL"] ?? builder.Configuration["Groq:Model"] ?? options.Model;
+    options.FallbackModel = builder.Configuration["GROQ_FALLBACK_MODEL"] ?? builder.Configuration["Groq:FallbackModel"] ?? options.FallbackModel;
     options.Endpoint = builder.Configuration["GROQ_ENDPOINT"] ?? builder.Configuration["Groq:Endpoint"] ?? options.Endpoint;
     if (int.TryParse(builder.Configuration["GROQ_TIMEOUT_SECONDS"] ?? builder.Configuration["Groq:TimeoutSeconds"], out var timeout))
         options.TimeoutSeconds = Math.Clamp(timeout, 1, 120);
@@ -165,6 +190,7 @@ app.UseStatusCodePages();
 
 if (app.Environment.IsDevelopment())
 {
+    app.UseWebAssemblyDebugging();
     app.MapOpenApi();
     app.UseSwaggerUI(c =>
     {
@@ -177,8 +203,6 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
-app.UseCors("AllowAll");
-app.UseDefaultFiles();
 app.UseStaticFiles();
 var architectureDocsPath = Path.Combine(app.Environment.ContentRootPath, "docs", "architecture");
 if (!Directory.Exists(architectureDocsPath))
@@ -198,6 +222,7 @@ app.UseRouting();
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
+app.UseAntiforgery();
 
 app.MapHub<ScheduleHub>("/hubs/schedule")
    .RequireAuthorization();
@@ -225,8 +250,27 @@ app.MapGroup("/api/admin")
    .RequireAuthorization(AppRoles.Admin)
    .MapAdminApi();
 
+app.MapGroup("/api/directory")
+   .WithTags("Directory")
+   .RequireAuthorization()
+   .MapDirectoryApi();
+
 app.MapGroup("/api")
    .MapAiApi();
+
+app.MapStaticAssets();
+var documentationRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "docs"));
+app.MapGet("/docs/{**documentPath}", (string? documentPath) =>
+{
+    if (string.IsNullOrWhiteSpace(documentPath)) return Results.NotFound();
+    var filePath = Path.GetFullPath(Path.Combine(documentationRoot, documentPath));
+    var docsPrefix = documentationRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+    if (!filePath.StartsWith(docsPrefix, StringComparison.OrdinalIgnoreCase) || !File.Exists(filePath)) return Results.NotFound();
+    return Results.File(filePath, "text/markdown; charset=utf-8");
+}).AllowAnonymous();
+app.MapRazorComponents<App>()
+   .AddInteractiveWebAssemblyRenderMode()
+   .AddAdditionalAssemblies(typeof(RoomBooking.Client.ClientMarker).Assembly);
 
 await StartupTasks.ApplyMigrationsAndSeedAsync(app);
 
@@ -283,6 +327,11 @@ public static class StartupTasks
             var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
             var configuration = services.GetRequiredService<IConfiguration>();
             await RoleSeeder.SeedAsync(roleManager, userManager, configuration, logger);
+            if (configuration.GetValue<bool>("Seed:DemoData"))
+            {
+                var environment = services.GetRequiredService<IWebHostEnvironment>();
+                await DemoDataSeeder.SeedAsync(db, userManager, roleManager, environment, logger);
+            }
         }
         catch (Exception ex)
         {
@@ -320,6 +369,43 @@ public sealed class CurrentUserService : ICurrentUserService
 
 public static class EndpointMappings
 {
+    public static RouteGroupBuilder MapDirectoryApi(this RouteGroupBuilder group)
+    {
+        group.MapPost("/search", async (DirectorySearchRequest request, AppDbContext db, CancellationToken ct) =>
+        {
+            var term = request.Query?.Trim();
+            if (term?.Length > 100) term = term[..100];
+            var users = db.Users.AsNoTracking();
+            var rooms = db.Resources.AsNoTracking();
+            if (!string.IsNullOrWhiteSpace(term))
+            {
+                users = users.Where(user => user.DisplayName.Contains(term) || (user.Email != null && user.Email.Contains(term)));
+                rooms = rooms.Where(room => room.Name.Contains(term) || room.Description.Contains(term));
+            }
+
+            var resultUsers = await users.OrderBy(user => user.DisplayName).Take(100)
+                .Select(user => new { user.Id, user.DisplayName, user.Email })
+                .ToListAsync(ct);
+            var resultRooms = await rooms.OrderBy(room => room.Name).Take(100)
+                .Select(room => new { room.Id, room.Name, room.Description, room.IsActive, HasImage = room.ImageData != null })
+                .ToListAsync(ct);
+            return TypedResults.Ok(new
+            {
+                users = resultUsers,
+                rooms = resultRooms.Select(room => new
+                {
+                    room.Id, room.Name, room.Description, room.IsActive,
+                    ImageUrl = GetResourceImageUrl(room.Id, room.HasImage)
+                })
+            });
+        }).WithName("SearchDirectory")
+          .WithSummary("Search database users and rooms")
+          .WithDescription("Authentication required. Search is limited to 100 characters and returns at most 100 results per entity type.")
+          .Produces(StatusCodes.Status200OK)
+          .ProducesProblem(StatusCodes.Status401Unauthorized);
+        return group;
+    }
+
     public static RouteGroupBuilder MapAuthApi(this RouteGroupBuilder group)
     {
         group.MapPost("/register", async Task<Results<Ok<UserDto>, ValidationProblem>> (
@@ -351,9 +437,12 @@ public static class EndpointMappings
             await userManager.AddToRoleAsync(user, AppRoles.User);
 
             var roles = await userManager.GetRolesAsync(user);
-            return TypedResults.Ok(new UserDto(user.Id, user.Email!, user.DisplayName, roles.ToList()));
+            return TypedResults.Ok(ToUserDto(user, roles));
         })
-        .WithName("Register");
+        .WithName("Register")
+        .WithSummary("Register a regular user")
+        .Produces<UserDto>(StatusCodes.Status200OK)
+        .ProducesValidationProblem(StatusCodes.Status400BadRequest);
 
         group.MapPost("/login", async Task<Results<Ok<UserDto>, UnauthorizedHttpResult, ValidationProblem>> (
             LoginRequest req,
@@ -372,9 +461,13 @@ public static class EndpointMappings
             if (!result.Succeeded) return TypedResults.Unauthorized();
 
             var roles = await userManager.GetRolesAsync(user);
-            return TypedResults.Ok(new UserDto(user.Id, user.Email!, user.DisplayName, roles.ToList()));
+            return TypedResults.Ok(ToUserDto(user, roles));
         })
-        .WithName("Login");
+        .WithName("Login")
+        .WithSummary("Sign in and create an authentication cookie")
+        .Produces<UserDto>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .ProducesValidationProblem(StatusCodes.Status400BadRequest);
 
         group.MapPost("/logout", async (SignInManager<ApplicationUser> signIn) =>
         {
@@ -392,9 +485,65 @@ public static class EndpointMappings
             if (user is null) return TypedResults.Unauthorized();
 
             var roles = await userManager.GetRolesAsync(user);
-            return TypedResults.Ok(new UserDto(user.Id, user.Email!, user.DisplayName, roles.ToList()));
+            return TypedResults.Ok(ToUserDto(user, roles));
         })
         .WithName("Me");
+
+        group.MapPut("/profile", [Authorize] async (UpdateProfileRequest request, UserManager<ApplicationUser> userManager, ICurrentUserService currentUser, CancellationToken ct) =>
+        {
+            var user = await currentUser.GetUserAsync(ct);
+            if (user is null) return Results.Unauthorized();
+            var name = request.DisplayName?.Trim();
+            if (string.IsNullOrWhiteSpace(name) || name.Length > 200)
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["displayName"] = ["Name is required and must be at most 200 characters."] });
+            if (request.PhoneNumber?.Length > 32)
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["phoneNumber"] = ["Phone number must be at most 32 characters."] });
+            user.DisplayName = name;
+            user.PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim();
+            var result = await userManager.UpdateAsync(user);
+            return result.Succeeded ? Results.Ok(ToUserDto(user, await userManager.GetRolesAsync(user))) : Results.ValidationProblem(result.ToModelStateDict());
+        }).WithName("UpdateMyProfile");
+
+        group.MapPost("/me/avatar", [Authorize] async (IFormFile file, HttpContext http, UserManager<ApplicationUser> userManager, ICurrentUserService currentUser, CancellationToken ct) =>
+        {
+            if (!IsSameOriginRequest(http)) return Results.Forbid();
+            var user = await currentUser.GetUserAsync(ct);
+            if (user is null) return Results.Unauthorized();
+            if (file.Length is <= 0 or > 10 * 1024 * 1024) return Results.Problem("Avatar must be between 1 byte and 10 MB.", statusCode: 413);
+            var data = new byte[checked((int)file.Length)];
+            await using (var stream = file.OpenReadStream()) await stream.ReadExactlyAsync(data, ct);
+            var contentType = GetUploadedImageContentType(data);
+            if (contentType is null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = ["Upload a valid JPEG, PNG, or WebP image."] });
+            user.AvatarData = data;
+            user.AvatarContentType = contentType;
+            var result = await userManager.UpdateAsync(user);
+            return result.Succeeded ? Results.Ok(ToUserDto(user, await userManager.GetRolesAsync(user))) : Results.ValidationProblem(result.ToModelStateDict());
+        }).DisableAntiforgery().WithName("UploadMyAvatar");
+
+        group.MapGet("/me/avatar", [Authorize] async (UserManager<ApplicationUser> userManager, ICurrentUserService currentUser) =>
+        {
+            var user = await currentUser.GetUserAsync(CancellationToken.None);
+            return user?.AvatarData is { Length: > 0 } data && user.AvatarContentType is { } type
+                ? Results.File(data, type)
+                : Results.NotFound();
+        }).WithName("GetMyAvatar");
+
+        group.MapDelete("/me/avatar", [Authorize] async (UserManager<ApplicationUser> userManager, ICurrentUserService currentUser, CancellationToken ct) =>
+        {
+            var user = await currentUser.GetUserAsync(ct);
+            if (user is null) return Results.Unauthorized();
+            user.AvatarData = null; user.AvatarContentType = null;
+            var result = await userManager.UpdateAsync(user);
+            return result.Succeeded ? Results.NoContent() : Results.ValidationProblem(result.ToModelStateDict());
+        }).WithName("DeleteMyAvatar");
+
+        group.MapPost("/password", [Authorize] async (ChangePasswordRequest request, UserManager<ApplicationUser> userManager, ICurrentUserService currentUser, CancellationToken ct) =>
+        {
+            var user = await currentUser.GetUserAsync(ct);
+            if (user is null) return Results.Unauthorized();
+            var result = await userManager.ChangePasswordAsync(user, request.CurrentPassword ?? string.Empty, request.NewPassword ?? string.Empty);
+            return result.Succeeded ? Results.NoContent() : Results.ValidationProblem(result.ToModelStateDict());
+        }).WithName("ChangeMyPassword");
 
         return group;
     }
@@ -405,20 +554,27 @@ public static class EndpointMappings
         {
             var resources = await db.Resources
                 .OrderBy(r => r.Name)
-                .Select(r => new ResourceDto(r.Id, r.Name, r.Description, r.IsActive, r.CreatedAtUtc, r.UpdatedAtUtc))
+                .Select(r => new { r.Id, r.Name, r.Description, r.IsActive, r.CreatedAtUtc, r.UpdatedAtUtc, HasImage = r.ImageData != null })
                 .ToListAsync(ct);
-            return TypedResults.Ok(resources);
+            return TypedResults.Ok(resources.Select(r => new ResourceDto(r.Id, r.Name, r.Description, r.IsActive,
+                r.CreatedAtUtc, r.UpdatedAtUtc, GetResourceImageUrl(r.Id, r.HasImage))).ToList());
         })
-        .WithName("GetResources");
+        .WithName("GetResources")
+        .WithSummary("List meeting rooms")
+        .Produces<List<ResourceDto>>(StatusCodes.Status200OK);
 
         group.MapGet("/{id:int}", async Task<Results<Ok<ResourceDto>, NotFound>> (
             int id, AppDbContext db, CancellationToken ct) =>
         {
             var r = await db.Resources.FindAsync([id], ct);
             if (r is null) return TypedResults.NotFound();
-            return TypedResults.Ok(new ResourceDto(r.Id, r.Name, r.Description, r.IsActive, r.CreatedAtUtc, r.UpdatedAtUtc));
+            return TypedResults.Ok(new ResourceDto(r.Id, r.Name, r.Description, r.IsActive, r.CreatedAtUtc, r.UpdatedAtUtc,
+                GetResourceImageUrl(r.Id, r.ImageData is { Length: > 0 })));
         })
-        .WithName("GetResourceById");
+        .WithName("GetResourceById")
+        .WithSummary("Get a room by ID")
+        .Produces<ResourceDto>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
 
         group.MapPost("/", [Authorize(AppRoles.Admin)] async Task<Results<Created<ResourceDto>, ValidationProblem>> (
             CreateResourceRequest req,
@@ -441,10 +597,16 @@ public static class EndpointMappings
             db.Resources.Add(resource);
             await db.SaveChangesAsync(ct);
 
-            var dto = new ResourceDto(resource.Id, resource.Name, resource.Description, resource.IsActive, resource.CreatedAtUtc, resource.UpdatedAtUtc);
+            var dto = new ResourceDto(resource.Id, resource.Name, resource.Description, resource.IsActive, resource.CreatedAtUtc,
+                resource.UpdatedAtUtc, GetResourceImageUrl(resource.Id, hasImage: false));
             return TypedResults.Created($"/api/resources/{resource.Id}", dto);
         })
-        .WithName("CreateResource");
+        .WithName("CreateResource")
+        .WithSummary("Create a meeting room (Admin)")
+        .Produces<ResourceDto>(StatusCodes.Status201Created)
+        .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden);
 
         group.MapPut("/{id:int}", [Authorize(AppRoles.Admin)] async Task<Results<NoContent, NotFound, ValidationProblem>> (
             int id,
@@ -466,7 +628,13 @@ public static class EndpointMappings
             await db.SaveChangesAsync(ct);
             return TypedResults.NoContent();
         })
-        .WithName("UpdateResource");
+        .WithName("UpdateResource")
+        .WithSummary("Update a meeting room (Admin)")
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
 
         group.MapDelete("/{id:int}", [Authorize(AppRoles.Admin)] async Task<Results<NoContent, NotFound>> (
             int id, AppDbContext db, CancellationToken ct) =>
@@ -477,7 +645,61 @@ public static class EndpointMappings
             await db.SaveChangesAsync(ct);
             return TypedResults.NoContent();
         })
-        .WithName("DeleteResource");
+        .WithName("DeleteResource")
+        .WithSummary("Delete a meeting room (Admin)")
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{id:int}/image", async Task<Results<FileContentHttpResult, NotFound>> (
+            int id, AppDbContext db, CancellationToken ct) =>
+        {
+            var image = await db.Resources.AsNoTracking()
+                .Where(resource => resource.Id == id)
+                .Select(resource => new { resource.ImageData, resource.ImageContentType })
+                .FirstOrDefaultAsync(ct);
+            if (image?.ImageData is not { Length: > 0 } || image.ImageContentType is null)
+                return TypedResults.NotFound();
+            return TypedResults.File(image.ImageData, image.ImageContentType);
+        })
+        .WithName("GetResourceImage")
+        .WithSummary("Get an uploaded room image")
+        .Produces(StatusCodes.Status404NotFound);
+
+        group.MapPost("/{id:int}/image", [Authorize(AppRoles.Admin)] async (
+            int id, IFormFile file, HttpContext http, AppDbContext db, CancellationToken ct) =>
+        {
+            if (!IsSameOriginRequest(http)) return Results.Forbid();
+            if (file.Length is <= 0 or > 10 * 1024 * 1024)
+                return Results.Problem("Room image must be between 1 byte and 10 MB.", statusCode: 413);
+
+            var data = new byte[checked((int)file.Length)];
+            await using (var stream = file.OpenReadStream()) await stream.ReadExactlyAsync(data, ct);
+            var contentType = GetUploadedImageContentType(data);
+            if (contentType is null)
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["file"] = ["Upload a valid JPEG, PNG, or WebP image."]
+                });
+
+            var resource = await db.Resources.FirstOrDefaultAsync(resource => resource.Id == id, ct);
+            if (resource is null) return Results.NotFound();
+            resource.ImageData = data;
+            resource.ImageContentType = contentType;
+            resource.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        })
+        .DisableAntiforgery()
+        .WithName("UploadResourceImage")
+        .WithSummary("Upload or replace a room image (Admin)")
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
+        .Produces(StatusCodes.Status404NotFound);
 
         return group;
     }
@@ -517,7 +739,11 @@ public static class EndpointMappings
 
             return TypedResults.Ok(slots);
         })
-        .WithName("GetResourceSchedule");
+        .WithName("GetResourceSchedule")
+        .WithSummary("View a room schedule and slot availability")
+        .WithDescription("Optionally filter by a UTC calendar date using YYYY-MM-DD.")
+        .Produces<List<TimeSlotDto>>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound);
 
         group.MapPost("/{id:int}/slots", [Authorize(AppRoles.Admin)] async Task<Results<Created<List<TimeSlotDto>>, NotFound, ValidationProblem>> (
             int id,
@@ -567,7 +793,13 @@ public static class EndpointMappings
             var dtos = toAdd.Select(ts => new TimeSlotDto(ts.Id, ts.ResourceId, ts.StartUtc, ts.EndUtc, false, null)).ToList();
             return TypedResults.Created($"/api/resources/{id}/schedule", dtos);
         })
-        .WithName("CreateTimeSlots");
+        .WithName("CreateTimeSlots")
+        .WithSummary("Add fixed UTC time slots to a room (Admin)")
+        .Produces<List<TimeSlotDto>>(StatusCodes.Status201Created)
+        .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .Produces(StatusCodes.Status404NotFound);
 
         return group;
     }
@@ -600,7 +832,8 @@ public static class EndpointMappings
             {
                 TimeSlotId = req.TimeSlotId,
                 UserId = userId,
-                CreatedAtUtc = DateTimeOffset.UtcNow
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                IsAiGenerated = false
             };
             db.Bookings.Add(booking);
 
@@ -636,7 +869,8 @@ public static class EndpointMappings
                 created.TimeSlot.Resource.Name,
                 created.UserId,
                 created.User.Email ?? string.Empty,
-                created.CreatedAtUtc);
+                created.CreatedAtUtc,
+                created.IsAiGenerated);
 
             var evt = new SlotBookedEvent(
                 created.TimeSlotId,
@@ -683,7 +917,8 @@ public static class EndpointMappings
                     b.TimeSlot.Resource.Name,
                     b.UserId,
                     b.User.Email ?? string.Empty,
-                    b.CreatedAtUtc))
+                    b.CreatedAtUtc,
+                    b.IsAiGenerated))
                 .ToListAsync(ct);
 
             return TypedResults.Ok(bookings);
@@ -694,11 +929,105 @@ public static class EndpointMappings
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden);
 
+        group.MapDelete("/{id:int}", [Authorize] async (
+            int id,
+            AppDbContext db,
+            ICurrentUserService currentUser,
+            IHubContext<ScheduleHub> hub,
+            ILogger<Program> logger,
+            CancellationToken ct) =>
+        {
+            var userId = currentUser.UserId;
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Unauthorized();
+            var booking = await db.Bookings.Include(x => x.TimeSlot)
+                .FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId && x.TimeSlot.StartUtc > DateTimeOffset.UtcNow, ct);
+            if (booking is null) return Results.NotFound();
+
+            db.Bookings.Remove(booking);
+            await db.SaveChangesAsync(ct);
+            var evt = new SlotCancelledEvent(booking.TimeSlotId, booking.TimeSlot.ResourceId, booking.Id);
+            try { await hub.Clients.Group(ScheduleHub.GetGroupName(evt.ResourceId)).SendAsync(ScheduleHubMethods.SlotCancelled, evt, ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning("Could not publish realtime update for cancelled booking {BookingId}", booking.Id);
+            }
+            logger.LogInformation("Booking {BookingId} cancelled by user {UserId}", booking.Id, userId);
+            return Results.NoContent();
+        })
+        .WithName("CancelMyBooking")
+        .WithSummary("Cancel one of the authenticated user's future bookings")
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
         return group;
     }
 
     public static RouteGroupBuilder MapAdminApi(this RouteGroupBuilder group)
     {
+        group.MapGet("/overview", async (AppDbContext db, IConfiguration configuration, CancellationToken ct) => Results.Ok(new
+        {
+            resources = await db.Resources.CountAsync(ct),
+            timeSlots = await db.TimeSlots.CountAsync(ct),
+            bookings = await db.Bookings.CountAsync(ct),
+            users = await db.Users.CountAsync(ct),
+            aiSkills = await db.AiSkills.CountAsync(ct),
+            database = db.Database.ProviderName?.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) == true ? "SQL Server" : "In-memory (development)",
+            aiConfigured = !string.IsNullOrWhiteSpace(configuration["GROQ_API_KEY"] ?? configuration["Groq:ApiKey"]),
+            signalR = string.IsNullOrWhiteSpace(configuration.GetConnectionString("AzureSignalR")) ? "Built-in SignalR" : "Azure SignalR"
+        })).WithName("GetAdminOverview")
+           .WithSummary("View system totals and service configuration (Admin)")
+           .Produces(StatusCodes.Status200OK)
+           .ProducesProblem(StatusCodes.Status401Unauthorized)
+           .ProducesProblem(StatusCodes.Status403Forbidden);
+
+        group.MapGet("/analytics", async (AppDbContext db, CancellationToken ct) =>
+        {
+            var now = DateTimeOffset.UtcNow;
+            var todayUtc = DateOnly.FromDateTime(now.UtcDateTime);
+            var fromUtc = new DateTimeOffset(todayUtc.AddDays(-13).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            var untilUtc = now.AddDays(30);
+            var recentBookings = db.Bookings.AsNoTracking()
+                .Where(booking => booking.CreatedAtUtc >= fromUtc && booking.CreatedAtUtc <= now);
+
+            var dailyCounts = await recentBookings
+                .GroupBy(booking => booking.CreatedAtUtc.Date)
+                .Select(day => new { Date = day.Key, Count = day.Count() })
+                .ToListAsync(ct);
+            var popularRooms = await recentBookings
+                .GroupBy(booking => booking.TimeSlot.Resource.Name)
+                .Select(room => new { Room = room.Key, Count = room.Count() })
+                .OrderByDescending(room => room.Count)
+                .ThenBy(room => room.Room)
+                .Take(5)
+                .ToListAsync(ct);
+            var capacity = await db.TimeSlots.AsNoTracking()
+                .Where(slot => slot.Resource.IsActive && slot.StartUtc >= now && slot.StartUtc < untilUtc)
+                .GroupBy(_ => 1)
+                .Select(slots => new { Total = slots.Count(), Booked = slots.Count(slot => slot.Booking != null) })
+                .FirstOrDefaultAsync(ct);
+
+            var days = Enumerable.Range(0, 14).Select(offset => todayUtc.AddDays(offset - 13)).Select(date => new
+            {
+                Date = date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                Count = dailyCounts.Where(day => DateOnly.FromDateTime(day.Date) == date).Select(day => day.Count).FirstOrDefault()
+            });
+            return Results.Ok(new
+            {
+                bookingsLast14Days = dailyCounts.Sum(day => day.Count),
+                upcomingSlots = capacity?.Total ?? 0,
+                bookedUpcomingSlots = capacity?.Booked ?? 0,
+                upcomingUtilizationPercent = capacity is { Total: > 0 } ? Math.Round(capacity.Booked * 100d / capacity.Total, 1) : 0,
+                dailyBookings = days,
+                mostBookedRooms = popularRooms
+            });
+        })
+        .WithName("GetAdminAnalytics")
+        .WithSummary("View recent booking activity and upcoming room utilization (Admin)")
+        .Produces(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden);
+
         group.MapGet("/bookings", async (AppDbContext db, CancellationToken ct) =>
         {
             var bookings = await db.Bookings
@@ -715,16 +1044,49 @@ public static class EndpointMappings
                     b.TimeSlot.Resource.Name,
                     b.UserId,
                     b.User.Email ?? string.Empty,
-                    b.CreatedAtUtc))
+                    b.CreatedAtUtc,
+                    b.IsAiGenerated))
                 .ToListAsync(ct);
 
             return TypedResults.Ok(bookings);
         })
-        .WithName("AdminGetAllBookings");
+        .WithName("AdminGetAllBookings")
+        .WithSummary("List all bookings (Admin)")
+        .Produces<List<BookingDto>>(StatusCodes.Status200OK)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden);
 
         return group;
     }
+
+    private static string GetResourceImageUrl(int id, bool hasImage) =>
+        hasImage ? $"/api/resources/{id}/image" : "/images/rooms/no_image_rooms.png";
+
+    private static UserDto ToUserDto(ApplicationUser user, IEnumerable<string> roles) => new(
+        user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.PhoneNumber,
+        user.AvatarData is { Length: > 0 } ? "/api/auth/me/avatar" : null);
+
+    private static string? GetUploadedImageContentType(byte[] data)
+    {
+        if (data.Length >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff) return "image/jpeg";
+        if (data.Length >= 8 && data.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 })) return "image/png";
+        if (data.Length >= 12 && data.AsSpan(0, 4).SequenceEqual("RIFF"u8) && data.AsSpan(8, 4).SequenceEqual("WEBP"u8)) return "image/webp";
+        return null;
+    }
+
+    private static bool IsSameOriginRequest(HttpContext http)
+    {
+        var source = http.Request.Headers.Origin.FirstOrDefault() ?? http.Request.Headers.Referer.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(source)) return true;
+        return Uri.TryCreate(source, UriKind.Absolute, out var uri)
+            && string.Equals(uri.Scheme, http.Request.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(uri.Authority, http.Request.Host.Value, StringComparison.OrdinalIgnoreCase);
+    }
 }
+
+public sealed record UpdateProfileRequest(string? DisplayName, string? PhoneNumber);
+public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
+public sealed record DirectorySearchRequest(string? Query);
 
 public sealed record CreateTimeSlotRequest(DateTimeOffset StartUtc, DateTimeOffset EndUtc);
 

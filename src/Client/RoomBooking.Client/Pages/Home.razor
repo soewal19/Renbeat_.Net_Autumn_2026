@@ -1,0 +1,371 @@
+@page "/"
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject IAuthClient Auth
+@inject IResourceClient ResourcesApi
+@inject IScheduleClient ScheduleApi
+@inject IBookingClient BookingsApi
+@inject IAdminClient AdminApi
+@inject IDirectoryClient DirectoryApi
+@inject IScheduleRealtimeClient Realtime
+
+<PageTitle>Roomly — Meeting room booking</PageTitle>
+
+@if (_user is null)
+{
+    <main class="page-shell">
+        <section class="auth-layout">
+            <div class="auth-copy"><div class="eyebrow"><span class="eyebrow-line"></span> YOUR SPACE, ON YOUR TIME</div><h1>Good meetings<br /><span>start here.</span></h1><p>Find a room that fits your day. Book a free time slot and your team will see the update instantly.</p></div>
+            <div class="auth-card">
+                <div class="auth-tabs"><button class="auth-tab @(_registering ? "" : "active")" @onclick="() => _registering = false">Sign in</button><button class="auth-tab @(_registering ? "active" : "")" @onclick="() => _registering = true">Create account</button></div>
+                <h2>@(_registering ? "Create your account" : "Welcome back")</h2>
+                <form class="form-stack" @onsubmit="AuthenticateAsync" @onsubmit:preventDefault>
+                    @if (_registering) { <label>Full name<input @bind="_displayName" autocomplete="name" maxlength="200" required /></label> }
+                    <label>Email address<input @bind="_email" type="email" autocomplete="email" required /></label>
+                    <label>Password<input @bind="_password" type="password" autocomplete="current-password" minlength="6" required /></label>
+                    <button class="button button-primary button-wide" type="submit" disabled="@_busy">@(_registering ? "Create account" : "Sign in") <span>→</span></button>
+                </form>
+                @if (!string.IsNullOrWhiteSpace(_message)) { <p class="message" role="alert">@_message</p> }
+                <p class="auth-footnote">Secure sign-in powered by ASP.NET Core Identity</p>
+            </div>
+        </section>
+    </main>
+}
+else
+{
+    <main class="page-shell">
+        <header class="blazor-header"><a class="brand" href="/" @onclick:preventDefault="true" @onclick='() => ShowView("rooms")'><span class="brand-mark">R</span><span>roomly<span class="brand-dot">.</span></span></a>
+            <div class="blazor-quick-search"><input aria-label="Search people and rooms" placeholder="Quick search people and rooms…" value="@_quickQuery" @oninput="QuickSearchChanged" />@if (_quickResults is not null && _quickQuery.Length >= 2) { <div class="blazor-search-results">@foreach (var person in _quickResults.Users.Take(4)) { <button @onclick="() => OpenPersonAsync(person)"><strong>@person.Name</strong><small>Person · @person.Email</small></button> } @foreach (var room in _quickResults.Rooms.Take(4)) { <button @onclick="() => OpenRoomAsync(room)"><strong>@room.Name</strong><small>Room · @room.Description</small></button> }</div> }</div>
+            <div class="topbar-right"><span class="connection @(_realtimeConnected ? "" : "offline")"><i></i>@(_realtimeConnected ? "Live updates" : "Reconnecting")</span><span class="user-label">@_user.DisplayName</span><button class="button button-quiet" @onclick="LogoutAsync">Sign out</button></div>
+        </header>
+        <nav class="workspace-nav" aria-label="Workspace">
+            <button class="workspace-tab @Active("rooms")" @onclick='() => ShowView("rooms")'>Rooms & bookings</button>
+            <button class="workspace-tab @Active("bookings")" @onclick='() => ShowView("bookings")'>My bookings</button>
+            <button class="workspace-tab @Active("directory")" @onclick='() => ShowView("directory")'>Directory</button>
+            <button class="workspace-tab @Active("profile")" @onclick='() => ShowView("profile")'>My profile</button>
+            @if (IsAdmin) { <button class="workspace-tab @Active("admin")" @onclick='() => ShowView("admin")'>Admin</button> }
+            <a class="workspace-tab" href="/index.html">AI workspace</a>
+            <button class="workspace-tab @Active("help")" @onclick='() => ShowView("help")'>Help</button>
+        </nav>
+
+        @if (_view == "rooms")
+        {
+            <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> WORKSPACE</div><h1>Find your <span>room.</span></h1><p class="muted">Choose a meeting room and a time that works for you.</p></div></div>
+            <div class="content-grid">
+                <aside class="panel resource-panel"><div class="panel-heading"><div><span class="section-kicker">YOUR SPACES</span><h2>Meeting rooms</h2></div><span class="count-pill">@_resources.Count</span></div>
+                    <div class="resource-list">@foreach (var room in _resources) { <article class="room-admin-item"><button class="resource-card @(_selectedRoom?.Id == room.Id ? "selected" : "")" @onclick="() => SelectRoomAsync(room)"><img class="resource-thumbnail" src="@room.ImageUrl" alt="@room.Name" loading="lazy" decoding="async" /><span class="room-text"><span class="room-name">@room.Name</span><span class="room-description">@room.Description</span></span></button>@if (IsAdmin) { <div class="room-admin-actions"><button type="button" @onclick="() => EditRoom(room)">Edit</button><button type="button" @onclick="() => DeleteRoomAsync(room)">Delete</button></div> }</article> }</div>
+                    @if (IsAdmin) { <button class="button button-primary" @onclick="StartNewRoom">＋ Add room</button> }
+                </aside>
+                <section class="panel schedule-panel">
+                    @if (_selectedRoom is null) { <div class="schedule-placeholder"><div class="placeholder-art"><span>⌖</span></div><h2>Pick a room to get started</h2><p>Available time slots will appear here.</p></div> }
+                    else
+                    {
+                        <div class="panel-heading schedule-heading"><div><span class="section-kicker">ROOM SCHEDULE</span><h2>@_selectedRoom.Name</h2><p class="muted">@_selectedRoom.Description</p></div><label class="date-control"><span>DATE</span><input type="date" value="@_dateText" @onchange="DateChangedAsync" /></label></div>
+                        @if (!string.IsNullOrEmpty(_scheduleMessage)) { <p class="message">@_scheduleMessage</p> }
+                        <div class="slot-list">@foreach (var slot in _slots) { <div class="slot-row"><span class="slot-time">@slot.StartUtc.ToLocalTime().ToString("h:mm tt")<span class="slot-date">@slot.StartUtc.ToLocalTime().ToString("ddd, MMM d")</span></span><div class="slot-state @(slot.IsBooked ? "booked" : "")"><i></i>@(slot.IsBooked ? "Booked" : "Available")</div>@if (slot.IsBooked) { <span class="slot-booking">Reserved</span> } else { <button class="button button-primary button-book" @onclick="() => BookAsync(slot)" disabled="@_busy">Book</button> }</div> }</div>
+                        @if (_slots.Count == 0) { <div class="empty-state"><strong>No slots for this day</strong><span>Choose another date or ask an admin to add availability.</span></div> }
+                        @if (IsAdmin) { <div class="feature-actions"><input type="datetime-local" @bind="_slotStart" /><input type="datetime-local" @bind="_slotEnd" /><button class="button button-quiet" @onclick="AddSlotAsync">Add availability</button></div> }
+                    }
+                </section>
+            </div>
+            @if (IsAdmin && _editingRoom)
+            {
+                <form class="panel admin-editor" @onsubmit="SaveRoomAsync" @onsubmit:preventDefault>
+                    <h2>@(_editingRoomId is null ? "Add a room" : "Edit room")</h2><div class="admin-form-grid"><label>Room name<input @bind="_roomName" required maxlength="200" /></label><label>Description<input @bind="_roomDescription" maxlength="2000" /></label></div>
+                    <div class="room-image-upload"><img class="room-image-preview" src="@_roomImagePreview" alt="Room photo preview" /><div><label>Room image <InputFile OnChange="RoomImageSelectedAsync" accept="image/jpeg,image/png,image/webp" /></label><small>JPEG, PNG or WebP · up to 10 MB. If no image is uploaded, the default room photo is used.</small></div></div>
+                    @if (_editingRoomId is not null) { <label class="check-label"><input type="checkbox" @bind="_roomActive" /> Available for booking</label> }
+                    <div class="feature-actions"><button class="button button-primary" type="submit">Save room</button><button class="button button-quiet" type="button" @onclick="CancelRoomEdit">Cancel</button></div>
+                </form>
+            }
+        }
+        else if (_view == "bookings")
+        {
+            <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> YOUR SCHEDULE</div><h1>My <span>bookings.</span></h1></div></div>
+            <section class="panel feature-panel"><div class="booking-list"><div class="booking-row header"><span>Room</span><span>Time slot</span><span>Booked at</span><span>Action</span></div>@foreach (var booking in _myBookings) { <div class="booking-row"><span>@booking.ResourceName @if (booking.IsAiGenerated) { <span class="ai-booking-badge">Booked by AI</span> }</span><span>@booking.SlotStartUtc.ToLocalTime().ToString("g")</span><span>@booking.CreatedAtUtc.ToLocalTime().ToString("d")</span><span>@if (booking.SlotStartUtc > DateTimeOffset.UtcNow) { <button class="button button-quiet" @onclick="() => CancelBookingAsync(booking)">Cancel booking</button> }</span></div> }</div>@if (_myBookings.Count == 0) { <p class="muted">You have no bookings yet.</p> }</section>
+        }
+        else if (_view == "directory")
+        {
+            <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> WORKSPACE DIRECTORY</div><h1>People & <span>rooms.</span></h1><p class="muted">Searches the database and local JSON fixture; fixture results merge with matching database records.</p></div></div>
+            <div class="directory-toolbar"><div class="directory-switch"><button class="workspace-tab @(_directoryKind == "users" ? "active" : "")" @onclick='() => SetDirectoryKind("users")'>People (@_directoryResults.Users.Count)</button><button class="workspace-tab @(_directoryKind == "rooms" ? "active" : "")" @onclick='() => SetDirectoryKind("rooms")'>Rooms (@_directoryResults.Rooms.Count)</button></div><input class="directory-search-input" type="search" placeholder="Search by name, team or room…" value="@_directoryQuery" @oninput="DirectoryQueryChanged" /></div>
+            @if (_directoryKind == "users") { <div class="directory-grid">@foreach (var person in Paged(_directoryResults.Users)) { <article class="directory-card person-card"><img class="directory-avatar" loading="lazy" decoding="async" src="@(person.Avatar ?? "/images/placeholders/avatar.svg")" alt="Profile avatar" /><div class="directory-card-body"><h2>@person.Name</h2><p class="directory-subtitle">@person.Role</p><p class="directory-meta">@person.Team · @person.Location</p><a class="directory-email" href="mailto:@person.Email">@person.Email</a></div></article> }</div> }
+            else { <div class="directory-grid">@foreach (var room in Paged(_directoryResults.Rooms)) { <article class="directory-card room-directory-card"><img class="directory-room-image" loading="lazy" decoding="async" src="@(room.Image ?? "/images/rooms/no_image_rooms.png")" alt="@room.Name" /><div class="directory-card-body"><h2>@room.Name</h2><p class="directory-description">@room.Description</p><p class="directory-meta">@(room.Capacity > 0 ? $"{room.Capacity} people · " : "")@room.Location</p><div class="directory-features">@foreach (var feature in room.Features) { <span>@feature</span> }</div></div></article> }</div> }
+            <nav class="pagination" aria-label="Directory pages"><button class="page-button" disabled="@(_page <= 1)" @onclick="() => ChangePage(_page - 1)">Previous</button>@for (var page = 1; page <= PageCount; page++) { var pageNumber = page;<button class="page-button" aria-current="@(_page == pageNumber ? "page" : null)" @onclick="() => ChangePage(pageNumber)">@pageNumber</button> }<button class="page-button" disabled="@(_page >= PageCount)" @onclick="() => ChangePage(_page + 1)">Next</button><span class="pagination-summary">Page @_page of @PageCount</span></nav>
+        }
+        else if (_view == "profile")
+        {
+            <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> ACCOUNT SETTINGS</div><h1>My <span>profile.</span></h1></div></div>
+            <div class="profile-layout"><form class="panel profile-card form-stack" @onsubmit="SaveProfileAsync" @onsubmit:preventDefault><div class="avatar-editor"><img class="profile-avatar" src="@(_user.AvatarUrl ?? "/images/placeholders/avatar.svg")" alt="Profile avatar" loading="lazy" /><label class="button button-quiet upload-button">Upload photo<InputFile OnChange="AvatarSelectedAsync" accept="image/jpeg,image/png,image/webp" /></label>@if (_user.AvatarUrl is not null) { <button type="button" class="button button-quiet" @onclick="RemoveAvatarAsync">Remove photo</button> }<small>JPEG, PNG or WebP · up to 10 MB</small></div><h2>@_user.DisplayName</h2><label>Display name<input @bind="_profileName" required maxlength="200" /></label><label>Email address<input value="@_user.Email" readonly /></label><label>Phone number<input @bind="_profilePhone" maxlength="32" /></label><button class="button button-primary" type="submit">Save profile</button></form>
+                <form class="panel profile-card form-stack" @onsubmit="ChangePasswordAsync" @onsubmit:preventDefault><h2>Change password</h2><label>Current password<input @bind="_currentPassword" type="password" required /></label><label>New password<input @bind="_newPassword" type="password" minlength="6" required /></label><button class="button button-primary" type="submit">Update password</button></form></div>
+        }
+        else if (_view == "admin" && IsAdmin)
+        {
+            <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> WORKSPACE MANAGEMENT</div><h1>Admin <span>overview.</span></h1></div><button class="button button-quiet" @onclick="LoadAdminAsync">Refresh</button></div>
+            @if (_overview is not null) { <div class="admin-metrics">@foreach (var metric in AdminMetrics) { <article class="panel admin-metric"><span>@metric.Label</span><strong>@metric.Value</strong></article> }</div><section class="panel admin-integrations"><h2>Integrations</h2><p>Database: @_overview.Database · AI: @(_overview.AiConfigured ? "Configured" : "Not configured") · Realtime: @_overview.SignalR</p></section> }
+            <section class="panel admin-bookings"><h2>All bookings</h2><div class="booking-list">@foreach (var booking in _adminBookings) { <div class="booking-row"><span>@booking.ResourceName @if (booking.IsAiGenerated) { <span class="ai-booking-badge">Booked by AI</span> }</span><span>@booking.UserEmail</span><span>@booking.SlotStartUtc.ToLocalTime().ToString("g")</span><span>@booking.CreatedAtUtc.ToLocalTime().ToString("g")</span></div> }</div></section>
+        }
+        else if (_view == "help")
+        {
+            <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> ROOMLY GUIDE</div><h1>Help & <span>documentation.</span></h1><p class="muted">How to book rooms, use AI assistance, and understand access and live updates.</p></div></div>
+            <div class="help-grid">
+                <article class="panel help-card"><h2>Getting started</h2><p>Choose an active room, select a date, and book a slot marked Available. Your bookings are tied to your account and appear under My bookings.</p></article>
+                <article class="panel help-card"><h2>Roles and access</h2><p>Users can view rooms and schedules, book available slots, manage their profile, and cancel their own future bookings. Admins can also manage rooms and availability and view all bookings.</p></article>
+                <article class="panel help-card"><h2>Autonomous AI booking</h2><p>Open <a class="text-link" href="/index.html">AI workspace</a> and give a clear request with the exact room, date, and start time, for example: “Book Cedar on September 29 at 10:00 AM.” The assistant uses your browser time zone unless you specify one. It asks for details rather than guessing.</p></article>
+                <article class="panel help-card"><h2>Availability suggestions</h2><p>Availability questions only return suggestions. Review the proposed room and slot, then select Confirm booking to create the booking. If you want a direct booking, state that explicitly and include the exact room, date, and start time.</p></article>
+                <article class="panel help-card"><h2>Conflicts and live updates</h2><p>A time slot can have only one booking. If another user books it first, you will see a conflict message; choose another available slot. SignalR updates open schedules after a booking or cancellation without requiring a page refresh.</p></article>
+                <article class="panel help-card"><h2>Cancel a booking</h2><p>In My bookings, select Cancel booking next to one of your future bookings. Cancellation is unavailable after the slot starts. The AI assistant cannot cancel bookings for you.</p></article>
+                <article class="panel help-card"><h2>AI availability and privacy</h2><p>AI assistance requires sign-in and a configured provider. If it is unavailable, room browsing and manual booking continue to work. AI booking requests are checked by the server, and the AI cannot manage another user's bookings.</p></article>
+                <article class="panel help-card"><h2>Technical documentation</h2><p>Read the <a class="text-link" href="/docs/ai-assisted-booking.md" target="_blank" rel="noopener">AI booking guide</a> for command examples and operator configuration. Explore the <a class="text-link" href="/index.html">AI workspace</a> for the full Help section, Swagger/OpenAPI, and C4 architecture diagrams.</p></article>
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(_message) && _view != "") { <div class="toast show @(_isError ? "error" : "")" role="status">@_message</div> }
+    </main>
+}
+
+@code {
+    private UserDto? _user;
+    private bool _registering, _busy, _realtimeConnected, _isError, _roomActive = true;
+    private string _email = "", _password = "", _displayName = "", _message = "", _view = "rooms";
+    private string _profileName = "", _profilePhone = "", _currentPassword = "", _newPassword = "";
+    private string _dateText = DateTime.Today.ToString("yyyy-MM-dd");
+    private DateTime? _slotStart, _slotEnd;
+    private string _roomName = "", _roomDescription = "", _directoryQuery = "", _directoryKind = "users", _quickQuery = "";
+    private string _roomImagePreview = "/images/rooms/no_image_rooms.png";
+    private IBrowserFile? _roomImageFile;
+    private bool _editingRoom;
+    private ResourceDto? _selectedRoom;
+    private int? _editingRoomId;
+    private DirectorySearchResults _directoryResults = new([], []);
+    private DirectorySearchResults? _quickResults;
+    private IReadOnlyList<ResourceDto> _resources = [];
+    private IReadOnlyList<TimeSlotDto> _slots = [];
+    private IReadOnlyList<BookingDto> _myBookings = [], _adminBookings = [];
+    private AdminOverview? _overview;
+    private string _scheduleMessage = "";
+    private int _page = 1;
+    private CancellationTokenSource? _quickSearchCts;
+    private CancellationTokenSource? _directorySearchCts;
+    private const int PageSize = 8;
+    private bool IsAdmin => _user?.Roles.Contains("Admin", StringComparer.OrdinalIgnoreCase) == true;
+    private string Active(string view) => _view == view ? "active" : string.Empty;
+    private int PageCount => Math.Max(1, (int)Math.Ceiling((_directoryKind == "users" ? _directoryResults.Users.Count : _directoryResults.Rooms.Count) / (double)PageSize));
+    private IEnumerable<T> Paged<T>(IReadOnlyList<T> items) => items.Skip((_page - 1) * PageSize).Take(PageSize);
+    private IEnumerable<(string Label, int Value)> AdminMetrics => _overview is null ? [] : new[] { ("Rooms", _overview.Resources), ("Time slots", _overview.TimeSlots), ("Bookings", _overview.Bookings), ("Users", _overview.Users), ("AI skills", _overview.AiSkills) };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Realtime.SlotBooked += OnSlotBookedAsync;
+        Realtime.SlotCancelled += OnSlotCancelledAsync;
+        Realtime.StateChanged += OnRealtimeStateChanged;
+        try { _user = await Auth.MeAsync(); await LoadWorkspaceAsync(); }
+        catch (ApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized) { }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+
+    private async Task AuthenticateAsync()
+    {
+        _busy = true; _message = "";
+        try
+        {
+            if (_registering) await Auth.RegisterAsync(new RegisterRequest(_email, _password, _displayName));
+            _user = await Auth.LoginAsync(new LoginRequest(_email, _password));
+            await LoadWorkspaceAsync();
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { _busy = false; }
+    }
+
+    private async Task LoadWorkspaceAsync()
+    {
+        if (_user is null) return;
+        _profileName = _user.DisplayName; _profilePhone = _user.PhoneNumber ?? string.Empty;
+        _resources = await ResourcesApi.ListAsync();
+        if (_resources.Count > 0) await SelectRoomAsync(_resources[0]);
+        _myBookings = await BookingsApi.MineAsync();
+        try { await Realtime.StartAsync(); _realtimeConnected = Realtime.IsConnected; } catch { _realtimeConnected = false; }
+        if (IsAdmin) await LoadAdminAsync();
+    }
+
+    private async Task ShowView(string view)
+    {
+        if (_selectedRoom is not null && Realtime.IsConnected) await Realtime.LeaveResourceAsync(_selectedRoom.Id);
+        _view = view; _message = ""; _page = 1;
+        if (view == "bookings") _myBookings = await BookingsApi.MineAsync();
+        if (view == "directory") await SearchDirectoryAsync();
+        if (view == "admin" && IsAdmin) await LoadAdminAsync();
+        if (view == "rooms" && _selectedRoom is not null) await SelectRoomAsync(_selectedRoom);
+    }
+
+    private async Task SelectRoomAsync(ResourceDto room)
+    {
+        if (_selectedRoom is not null && Realtime.IsConnected) await Realtime.LeaveResourceAsync(_selectedRoom.Id);
+        _selectedRoom = room;
+        await LoadScheduleAsync();
+        try { if (!Realtime.IsConnected) await Realtime.StartAsync(); await Realtime.JoinResourceAsync(room.Id); _realtimeConnected = Realtime.IsConnected; }
+        catch { _realtimeConnected = false; }
+    }
+
+    private async Task LoadScheduleAsync()
+    {
+        if (_selectedRoom is null) return;
+        if (!DateOnly.TryParse(_dateText, out var date)) date = DateOnly.FromDateTime(DateTime.Today);
+        _slots = await ScheduleApi.GetAsync(_selectedRoom.Id, date);
+    }
+    private async Task DateChangedAsync(ChangeEventArgs args) { _dateText = args.Value?.ToString() ?? _dateText; await LoadScheduleAsync(); }
+
+    private async Task BookAsync(TimeSlotDto slot)
+    {
+        _busy = true; _scheduleMessage = "";
+        try { await BookingsApi.CreateAsync(new CreateBookingRequest(slot.Id)); _scheduleMessage = "Booking confirmed."; await LoadScheduleAsync(); _myBookings = await BookingsApi.MineAsync(); }
+        catch (ApiException ex) when (ex.IsConflict) { _scheduleMessage = "This slot was just booked by another user."; await LoadScheduleAsync(); }
+        catch (Exception ex) { _scheduleMessage = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private Task OnSlotBookedAsync(SlotBookedEvent message) => InvokeAsync(async () =>
+    {
+        if (_selectedRoom?.Id == message.ResourceId) await LoadScheduleAsync();
+        _realtimeConnected = Realtime.IsConnected; StateHasChanged();
+    });
+    private Task OnSlotCancelledAsync(SlotCancelledEvent message) => InvokeAsync(async () =>
+    {
+        if (_selectedRoom?.Id == message.ResourceId) await LoadScheduleAsync();
+        if (_view == "bookings") _myBookings = await BookingsApi.MineAsync();
+        _realtimeConnected = Realtime.IsConnected; StateHasChanged();
+    });
+    private async Task CancelBookingAsync(BookingDto booking)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", $"Cancel your booking for {booking.ResourceName}?")) return;
+        try { await BookingsApi.CancelAsync(booking.Id); _message = "Booking cancelled."; _myBookings = await BookingsApi.MineAsync(); if (_selectedRoom?.Id == booking.ResourceId) await LoadScheduleAsync(); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private void OnRealtimeStateChanged() => _ = InvokeAsync(() => { _realtimeConnected = Realtime.IsConnected; StateHasChanged(); });
+
+    private async Task LoadAdminAsync()
+    {
+        if (!IsAdmin) return;
+        try { _overview = await AdminApi.OverviewAsync(); _adminBookings = await AdminApi.BookingsAsync(); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+
+    private void StartNewRoom() { _editingRoom = true; _editingRoomId = null; _roomName = ""; _roomDescription = ""; _roomActive = true; _roomImageFile = null; _roomImagePreview = "/images/rooms/no_image_rooms.png"; }
+    private void EditRoom(ResourceDto room) { _editingRoom = true; _editingRoomId = room.Id; _roomName = room.Name; _roomDescription = room.Description; _roomActive = room.IsActive; _roomImageFile = null; _roomImagePreview = room.ImageUrl; }
+    private void CancelRoomEdit() { _editingRoom = false; _roomImageFile = null; _roomImagePreview = "/images/rooms/no_image_rooms.png"; }
+    private async Task RoomImageSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file.Size is <= 0 or > 10 * 1024 * 1024) { SetMessage("Room image must be between 1 byte and 10 MB.", true); return; }
+        if (file.ContentType is not ("image/jpeg" or "image/png" or "image/webp")) { SetMessage("Choose a JPEG, PNG, or WebP image.", true); return; }
+        try
+        {
+            await using var stream = file.OpenReadStream(10 * 1024 * 1024);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            _roomImageFile = file;
+            _roomImagePreview = $"data:{file.ContentType};base64,{Convert.ToBase64String(buffer.ToArray())}";
+            SetMessage($"Selected {file.Name}.");
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private async Task SaveRoomAsync()
+    {
+        try
+        {
+            int id;
+            if (_editingRoomId is int existingId)
+            {
+                id = existingId;
+                await ResourcesApi.UpdateAsync(id, new UpdateResourceRequest(_roomName, _roomDescription, _roomActive));
+            }
+            else
+            {
+                var created = await ResourcesApi.CreateAsync(new CreateResourceRequest(_roomName, _roomDescription));
+                id = created?.Id ?? throw new InvalidOperationException("The room was not created.");
+                _editingRoomId = id;
+            }
+            if (_roomImageFile is not null) await ResourcesApi.UploadImageAsync(id, _roomImageFile);
+            _resources = await ResourcesApi.ListAsync();
+            if (_selectedRoom?.Id == id && _resources.FirstOrDefault(room => room.Id == id) is { } updatedRoom)
+                await SelectRoomAsync(updatedRoom);
+            _editingRoom = false; _editingRoomId = null; _roomImageFile = null; _roomImagePreview = "/images/rooms/no_image_rooms.png";
+            SetMessage("Room saved.");
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private async Task DeleteRoomAsync(ResourceDto room)
+    {
+        try { await ResourcesApi.DeleteAsync(room.Id); _resources = await ResourcesApi.ListAsync(); if (_selectedRoom?.Id == room.Id) _selectedRoom = null; SetMessage("Room deleted."); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private async Task AddSlotAsync()
+    {
+        if (_selectedRoom is null || _slotStart is not DateTime localStart || _slotEnd is not DateTime localEnd || localEnd <= localStart) { SetMessage("Choose a valid time range.", true); return; }
+        try { await AdminApi.AddTimeSlotAsync(_selectedRoom.Id, new CreateTimeSlotRequest(new DateTimeOffset(localStart).ToUniversalTime(), new DateTimeOffset(localEnd).ToUniversalTime())); await LoadScheduleAsync(); SetMessage("Availability added."); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+
+    private async Task SearchDirectoryAsync()
+    {
+        try { _directoryResults = await DirectoryApi.SearchAsync(_directoryQuery); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private async Task DirectoryQueryChanged(ChangeEventArgs args)
+    {
+        _directoryQuery = args.Value?.ToString() ?? string.Empty;
+        _page = 1;
+        _directorySearchCts?.Cancel();
+        var cts = _directorySearchCts = new CancellationTokenSource();
+        try { await Task.Delay(200, cts.Token); _directoryResults = await DirectoryApi.SearchAsync(_directoryQuery, cts.Token); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private void SetDirectoryKind(string kind) { _directoryKind = kind; _page = 1; }
+    private void ChangePage(int page) => _page = Math.Clamp(page, 1, PageCount);
+    private async Task QuickSearchChanged(ChangeEventArgs args)
+    {
+        _quickQuery = args.Value?.ToString() ?? string.Empty;
+        _quickSearchCts?.Cancel();
+        var cts = _quickSearchCts = new CancellationTokenSource();
+        if (_quickQuery.Trim().Length < 2) { _quickResults = null; return; }
+        try { await Task.Delay(200, cts.Token); _quickResults = await DirectoryApi.SearchAsync(_quickQuery, cts.Token); }
+        catch (OperationCanceledException) { }
+        catch { _quickResults = null; }
+    }
+    private async Task OpenPersonAsync(DirectoryPerson person) { _directoryKind = "users"; _directoryQuery = person.Name; await ShowView("directory"); }
+    private async Task OpenRoomAsync(DirectoryRoom room) { _directoryKind = "rooms"; _directoryQuery = room.Name; await ShowView("directory"); }
+
+    private async Task SaveProfileAsync()
+    {
+        try { _user = await Auth.UpdateProfileAsync(new UpdateProfileRequest(_profileName, _profilePhone)); SetMessage("Profile saved."); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private async Task ChangePasswordAsync()
+    {
+        try { await Auth.ChangePasswordAsync(new ChangePasswordRequest(_currentPassword, _newPassword)); _currentPassword = _newPassword = ""; SetMessage("Password updated."); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private async Task AvatarSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file.Size is <= 0 or > 10 * 1024 * 1024) { SetMessage("Avatar must be no larger than 10 MB.", true); return; }
+        try { _user = await Auth.UploadAvatarAsync(file); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private async Task RemoveAvatarAsync()
+    {
+        try { await Auth.RemoveAvatarAsync(); _user = _user! with { AvatarUrl = null }; }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+    }
+    private async Task LogoutAsync() { if (_selectedRoom is not null) await Realtime.LeaveResourceAsync(_selectedRoom.Id); await Auth.LogoutAsync(); await Realtime.StopAsync(); _user = null; _resources = []; _selectedRoom = null; }
+    private void SetMessage(string message, bool error = false) { _message = message; _isError = error; }
+
+    public async ValueTask DisposeAsync()
+    {
+        Realtime.SlotBooked -= OnSlotBookedAsync;
+        Realtime.SlotCancelled -= OnSlotCancelledAsync;
+        Realtime.StateChanged -= OnRealtimeStateChanged;
+        _quickSearchCts?.Cancel(); _quickSearchCts?.Dispose();
+        _directorySearchCts?.Cancel(); _directorySearchCts?.Dispose();
+        if (_selectedRoom is not null && Realtime.IsConnected) await Realtime.LeaveResourceAsync(_selectedRoom.Id);
+        await Realtime.DisposeAsync();
+    }
+}

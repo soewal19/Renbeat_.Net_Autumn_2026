@@ -1,0 +1,382 @@
+{
+  "users": [
+    {
+      "team": "Product",
+      "email": "olena.marchenko@example.test",
+      "avatar": null,
+      "name": "Olena Marchenko",
+      "role": "Product Manager",
+      "location": "Kyiv"
+    },
+    {
+      "team": "Engineering",
+      "email": "maksym.kovalenko@example.test",
+      "avatar": null,
+      "name": "Maksym Kovalenko",
+      "role": "Backend Engineer",
+      "location": "Lviv"
+    },
+    {
+      "team": "Design",
+      "email": "iryna.shevchenko@example.test",
+      "avatar": null,
+      "name": "Iryna Shevchenko",
+      "role": "Product Designer",
+      "location": "Kyiv"
+    },
+    {
+      "team": "Engineering",
+      "email": "danylo.bondar@example.test",
+      "avatar": null,
+      "name": "Danylo Bondar",
+      "role": "Frontend Engineer",
+      "location": "Dnipro"
+    },
+    {
+      "team": "People",
+      "email": "sofia.tkachenko@example.test",
+      "avatar": null,
+      "name": "Sofia Tkachenko",
+      "role": "People Partner",
+      "location": "Kyiv"
+    },
+    {
+      "team": "Engineering",
+      "email": "artem.melnyk@example.test",
+      "avatar": null,
+      "name": "Artem Melnyk",
+      "role": "QA Engineer",
+      "location": "Odesa"
+    },
+    {
+      "team": "Marketing",
+      "email": "kateryna.boyko@example.test",
+      "avatar": null,
+      "name": "Kateryna Boyko",
+      "role": "Content Strategist",
+      "location": "Kyiv"
+    },
+    {
+      "team": "Engineering",
+      "email": "vladyslav.kravets@example.test",
+      "avatar": null,
+      "name": "Vladyslav Kravets",
+      "role": "Platform Engineer",
+      "location": "Lviv"
+    },
+    {
+      "team": "Customer Success",
+      "email": "anastasiia.oliinyk@example.test",
+      "avatar": null,
+      "name": "Anastasiia Oliinyk",
+      "role": "Customer Success Manager",
+      "location": "Kyiv"
+    },
+    {
+      "team": "Finance",
+      "email": "mykhailo.polishchuk@example.test",
+      "avatar": null,
+      "name": "Mykhailo Polishchuk",
+      "role": "Financial Analyst",
+      "location": "Vinnytsia"
+    },
+    {
+      "team": "Design",
+      "email": "yuliia.savchenko@example.test",
+      "avatar": null,
+      "name": "Yuliia Savchenko",
+      "role": "UX Researcher",
+      "location": "Kharkiv"
+    },
+    {
+      "team": "Engineering",
+      "email": "andrii.hrytsenko@example.test",
+      "avatar": null,
+      "name": "Andrii Hrytsenko",
+      "role": "Full-stack Engineer",
+      "location": "Kyiv"
+    },
+    {
+      "team": "Operations",
+      "email": "mariia.koval@example.test",
+      "avatar": null,
+      "name": "Mariia Koval",
+      "role": "Operations Lead",
+      "location": "Lviv"
+    },
+    {
+      "team": "Sales",
+      "email": "bohdan.rudenko@example.test",
+      "avatar": null,
+      "name": "Bohdan Rudenko",
+      "role": "Account Executive",
+      "location": "Kyiv"
+    },
+    {
+      "team": "Product",
+      "email": "viktoriia.lysenko@example.test",
+      "avatar": null,
+      "name": "Viktoriia Lysenko",
+      "role": "Business Analyst",
+      "location": "Odesa"
+    },
+    {
+      "team": "Engineering",
+      "email": "nazar.sydorenko@example.test",
+      "avatar": null,
+      "name": "Nazar Sydorenko",
+      "role": "DevOps Engineer",
+      "location": "Dnipro"
+    },
+    {
+      "team": "Marketing",
+      "email": "polina.marchuk@example.test",
+      "avatar": null,
+      "name": "Polina Marchuk",
+      "role": "Brand Designer",
+      "location": "Kyiv"
+    },
+    {
+      "team": "Customer Success",
+      "email": "taras.ivanchuk@example.test",
+      "avatar": null,
+      "name": "Taras Ivanchuk",
+      "role": "Support Specialist",
+      "location": "Lviv"
+    },
+    {
+      "team": "Legal",
+      "email": "alina.romaniuk@example.test",
+      "avatar": null,
+      "name": "Alina Romaniuk",
+      "role": "Legal Counsel",
+      "location": "Kyiv"
+    },
+    {
+      "team": "Engineering",
+      "email": "denys.shevchuk@example.test",
+      "avatar": null,
+      "name": "Denys Shevchuk",
+      "role": "Tech Lead",
+      "location": "Kharkiv"
+    }
+  ],
+  "rooms": [
+    {
+      "features": [
+        "Display",
+        "Whiteboard"
+      ],
+      "capacity": 6,
+      "image": null,
+      "name": "Cedar Room",
+      "description": "A bright room for focused team discussions and planning sessions.",
+      "location": "Floor 1"
+    },
+    {
+      "features": [
+        "Video conferencing",
+        "Display",
+        "Whiteboard"
+      ],
+      "capacity": 12,
+      "image": null,
+      "name": "Maple Boardroom",
+      "description": "A spacious boardroom for client meetings and leadership reviews.",
+      "location": "Floor 2"
+    },
+    {
+      "features": [
+        "Display"
+      ],
+      "capacity": 4,
+      "image": null,
+      "name": "Willow Meeting Room",
+      "description": "A quiet, flexible space for small project groups.",
+      "location": "Floor 1"
+    },
+    {
+      "features": [
+        "Video conferencing",
+        "Display",
+        "Whiteboard"
+      ],
+      "capacity": 16,
+      "image": null,
+      "name": "Oak Conference Room",
+      "description": "A large conference room with reliable hybrid meeting equipment.",
+      "location": "Floor 3"
+    },
+    {
+      "features": [
+        "Video conferencing"
+      ],
+      "capacity": 2,
+      "image": null,
+      "name": "Pine Focus Room",
+      "description": "A compact room for interviews, calls and one-to-one conversations.",
+      "location": "Floor 1"
+    },
+    {
+      "features": [
+        "Whiteboard",
+        "Display"
+      ],
+      "capacity": 8,
+      "image": null,
+      "name": "Birch Studio",
+      "description": "An adaptable workshop space for collaborative design exercises.",
+      "location": "Floor 2"
+    },
+    {
+      "features": [
+        "Display"
+      ],
+      "capacity": 6,
+      "image": null,
+      "name": "Spruce Room",
+      "description": "A comfortable space for weekly team check-ins.",
+      "location": "Floor 2"
+    },
+    {
+      "features": [
+        "Video conferencing",
+        "Whiteboard"
+      ],
+      "capacity": 8,
+      "image": null,
+      "name": "Ash Meeting Room",
+      "description": "A practical room for cross-functional planning.",
+      "location": "Floor 3"
+    },
+    {
+      "features": [
+        "Display"
+      ],
+      "capacity": 4,
+      "image": null,
+      "name": "Elm Huddle Room",
+      "description": "A small huddle space for quick conversations.",
+      "location": "Floor 1"
+    },
+    {
+      "features": [
+        "Video conferencing",
+        "Display"
+      ],
+      "capacity": 10,
+      "image": null,
+      "name": "Chestnut Boardroom",
+      "description": "A formal meeting room for presentations and reviews.",
+      "location": "Floor 3"
+    },
+    {
+      "features": [
+        "Whiteboard"
+      ],
+      "capacity": 7,
+      "image": null,
+      "name": "Juniper Room",
+      "description": "A calm room for workshops and team retrospectives.",
+      "location": "Floor 2"
+    },
+    {
+      "features": [
+        "Video conferencing",
+        "Display"
+      ],
+      "capacity": 6,
+      "image": null,
+      "name": "Aspen Meeting Room",
+      "description": "A light-filled space for product and customer sessions.",
+      "location": "Floor 1"
+    },
+    {
+      "features": [
+        "Video conferencing",
+        "Display",
+        "Whiteboard"
+      ],
+      "capacity": 14,
+      "image": null,
+      "name": "Rowan Conference Room",
+      "description": "A full-size room for department meetings.",
+      "location": "Floor 3"
+    },
+    {
+      "features": [
+        "Video conferencing"
+      ],
+      "capacity": 4,
+      "image": null,
+      "name": "Hazel Room",
+      "description": "A private setting for interviews and confidential discussions.",
+      "location": "Floor 2"
+    },
+    {
+      "features": [
+        "Display",
+        "Whiteboard"
+      ],
+      "capacity": 12,
+      "image": null,
+      "name": "Poplar Workshop",
+      "description": "An open layout for training and hands-on workshops.",
+      "location": "Floor 2"
+    },
+    {
+      "features": [
+        "Display"
+      ],
+      "capacity": 8,
+      "image": null,
+      "name": "Linden Room",
+      "description": "A relaxed space for planning and informal collaboration.",
+      "location": "Floor 1"
+    },
+    {
+      "features": [
+        "Video conferencing"
+      ],
+      "capacity": 2,
+      "image": null,
+      "name": "Cypress Focus Room",
+      "description": "A quiet room for concentrated work and video calls.",
+      "location": "Floor 3"
+    },
+    {
+      "features": [
+        "Video conferencing",
+        "Display",
+        "Whiteboard"
+      ],
+      "capacity": 10,
+      "image": null,
+      "name": "Magnolia Boardroom",
+      "description": "A premium boardroom for partner and stakeholder meetings.",
+      "location": "Floor 3"
+    },
+    {
+      "features": [
+        "Whiteboard",
+        "Display"
+      ],
+      "capacity": 6,
+      "image": null,
+      "name": "Sycamore Room",
+      "description": "A flexible room for project reviews and brainstorming.",
+      "location": "Floor 2"
+    },
+    {
+      "features": [
+        "Display",
+        "Whiteboard"
+      ],
+      "capacity": 10,
+      "image": null,
+      "name": "Willow Workshop",
+      "description": "A larger collaborative space with room for group activities.",
+      "location": "Floor 1"
+    }
+  ]
+}

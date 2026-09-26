@@ -9,6 +9,8 @@ namespace RoomBooking.Server.Infrastructure.Persistence.Entities;
 public sealed class ApplicationUser : IdentityUser
 {
     public string DisplayName { get; set; } = string.Empty;
+    public byte[]? AvatarData { get; set; }
+    public string? AvatarContentType { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 
     public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
