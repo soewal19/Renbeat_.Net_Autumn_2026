@@ -8,6 +8,7 @@ param sqlAdminLogin string = 'sqladmin'
 @secure()
 param sqlAdminPassword string
 param adminEmail string = 'admin@reenbeat.com'
+param seedDemoData bool = false
 @secure()
 param adminPassword string
 @secure()
@@ -44,6 +45,7 @@ module appservice 'modules/appservice.bicep' = {
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
     keyVaultName: kvName
     adminEmail: adminEmail
+    seedDemoData: seedDemoData
     groqConfigured: !empty(groqApiKey)
     tags: tags
   }

@@ -4,6 +4,7 @@ param planName string
 param appInsightsConnectionString string
 param keyVaultName string
 param adminEmail string
+param seedDemoData bool = false
 param groqConfigured bool = false
 param tags object
 
@@ -49,8 +50,10 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'ConnectionStrings__AzureSignalR', value: '@Microsoft.KeyVault(SecretUri=https://${keyVaultName}.vault.azure.net/secrets/AzureSignalR/)' }
         { name: 'Seed__AdminEmail', value: adminEmail }
         { name: 'Seed__AdminPassword', value: '@Microsoft.KeyVault(SecretUri=https://${keyVaultName}.vault.azure.net/secrets/Seed-AdminPassword/)' }
+        { name: 'Seed__DemoData', value: seedDemoData ? 'true' : 'false' }
         if (groqConfigured) { name: 'GROQ_API_KEY', value: '@Microsoft.KeyVault(SecretUri=https://${keyVaultName}.vault.azure.net/secrets/GroqApiKey/)' }
-        { name: 'GROQ_MODEL', value: 'llama-3.3-70b-versatile' }
+        { name: 'GROQ_MODEL', value: 'openai/gpt-oss-120b' }
+        { name: 'GROQ_FALLBACK_MODEL', value: 'openai/gpt-oss-20b' }
         { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
         { name: 'WEBSITE_ENABLE_APP_SERVICE_STORAGE', value: 'true' }
       ]

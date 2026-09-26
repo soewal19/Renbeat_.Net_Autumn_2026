@@ -19,6 +19,11 @@ on:
         description: Azure deployment region
         required: true
         default: westeurope
+      seedDemoData:
+        description: Import demo users, rooms, and time slots from the local JSON fixture
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   build-and-test:
@@ -92,6 +97,7 @@ jobs:
       ENVIRONMENT_NAME: ${{ inputs.environmentName }}
       APP_NAME: ${{ inputs.appName }}
       AZURE_LOCATION: ${{ inputs.location }}
+      SEED_DEMO_DATA: ${{ inputs.seedDemoData }}
 
     steps:
       - name: Checkout code
@@ -122,7 +128,7 @@ jobs:
             --template-file infra/main.bicep \
             --parameters environmentName="$ENVIRONMENT_NAME" appName="$APP_NAME" \
               sqlAdminPassword="$SQL_ADMIN_PASSWORD" adminPassword="$APP_ADMIN_PASSWORD" \
-              groqApiKey="$GROQ_API_KEY" \
+              groqApiKey="$GROQ_API_KEY" seedDemoData="$SEED_DEMO_DATA" \
             --query 'properties.outputs.appServiceName.value' -o tsv)
           az webapp deploy --resource-group "$RESOURCE_GROUP" --name "$APP_SERVICE_NAME" \
             --src-path room-booking.zip --type zip
