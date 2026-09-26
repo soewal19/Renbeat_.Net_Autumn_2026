@@ -4,7 +4,7 @@
 flowchart TB
     browser[User browser]
     subgraph azure[Azure subscription]
-      subgraph appsvc[Azure App Service\nASP.NET Core + static UI]
+      subgraph appsvc[Azure App Service\nASP.NET Core + Blazor WebAssembly]
         app[Roomly app\nManaged Identity]
       end
       sql[(Azure SQL Database)]

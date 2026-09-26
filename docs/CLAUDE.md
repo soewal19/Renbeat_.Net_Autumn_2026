@@ -74,10 +74,11 @@ Use the following stack unless a documented technical reason requires a change.
 
 ### Frontend
 
-- Same-origin HTML, CSS, and JavaScript in `src/Server/wwwroot`
-- Cookie-authenticated fetch requests to the ASP.NET Core API
-- SignalR browser client for live schedule updates
-- Keep the client small; add a framework only when the product requirements justify it
+- Blazor Web App with Interactive WebAssembly in `src/Client/RoomBooking.Client`
+- Same-origin ASP.NET Core host in `src/Server/Components`
+- Typed C# client services for API and SignalR; keep raw `HttpClient` calls out of Razor components
+- Keep booking commands on HTTP; SignalR is for notifications and schedule groups
+- Static AI workspace in `src/Server/wwwroot/index.html` is a legacy/demo surface, not the primary booking UI
 
 ### Database
 
@@ -518,7 +519,7 @@ The UI must update without a browser refresh.
 
 ## 11. Frontend Rules
 
-The current client is a static same-origin app served by ASP.NET Core from `src/Server/wwwroot`. This keeps authentication cookies and API calls on one origin without introducing a second deployment unit.
+The primary client is the same-origin Blazor Web App in `src/Client/RoomBooking.Client`, hosted by ASP.NET Core. Keep authentication cookies and API calls on one origin without adding a separate deployment unit. `/index.html` remains a legacy static AI workspace.
 
 Recommended pages/components:
 
@@ -649,7 +650,7 @@ Preferred hosting model:
 One Azure App Service
     |
     +-- ASP.NET Core backend
-    +-- static HTML/CSS/JavaScript frontend in wwwroot
+    +-- Blazor Web App host and static AI workspace
 ```
 
 Additional services:
@@ -952,7 +953,7 @@ Document meaningful limitations instead of hiding them.
 Before declaring the project complete, verify all of the following:
 
 - [ ] ASP.NET Core backend works.
-- [ ] Frontend supports authentication, schedules, booking, admin resource management, and live updates.
+- [x] Blazor frontend supports authentication, schedules, booking, admin resource management, and live updates.
 - [ ] Authentication works.
 - [ ] User role works.
 - [ ] Admin role works.
@@ -1005,10 +1006,12 @@ Any change that could weaken this guarantee requires explicit review and updated
 
 ## 29. Optional AI, Skills, Help, C4 and OpenAPI
 
-- Keep AI isolated from booking. `IAiAssistant` is provider-neutral at the endpoint boundary; Groq is optional and configured only on the server through `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_ENDPOINT`, and `GROQ_TIMEOUT_SECONDS` (or `Groq:*` config). No startup dependency on credentials.
-- AI can use only explicit read-only tools. Tool execution uses application services; the model never receives `AppDbContext`, SQL access, filesystem, secrets, arbitrary URLs, or executable code. Never let AI book; if that changes, it must invoke the existing booking command and preserve `UNIQUE(TimeSlotId)`.
+- Keep AI isolated from booking. `IAiAssistant` is provider-neutral at the endpoint boundary; Groq is optional and configured only on the server through `GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_FALLBACK_MODEL`, `GROQ_ENDPOINT`, and `GROQ_TIMEOUT_SECONDS` (or `Groq:*` config). No startup dependency on credentials. Never commit provider keys.
+- Groq model fallback may retry on 429, 5xx, transport failure, or timeout; do not retry invalid credentials or malformed requests. A second model under the same Groq organization does not evade organization-wide quotas.
+- AI can use only explicit allowlisted tools. Read tools are scoped to the authenticated user. The `book_slot` write tool is enabled only for a clear, non-negated booking instruction; it must require exact room/local date/start time, revalidate an active future slot on the server, attribute the booking to the authenticated user, set `IsAiGenerated`, and rely on `UNIQUE(TimeSlotId)` as final authority. Never allow the model direct database, filesystem, secrets, arbitrary URL, or executable-code access. Publish SignalR only after persistence.
+- Users can cancel only their own future bookings. The cancellation endpoint must return no booking details for a non-owner or past slot, and publish `SlotCancelled` only after the deletion commits. AI cannot cancel bookings.
 - Skills are untrusted data/instructions. Admin-only mutation; generated/uploaded data is validated and shown as a draft, persisted inactive, then separately approved/activated. `.md`, `.txt`, and `.json` only; valid UTF-8; 64 KB max; never execute uploaded content.
 - Core features must continue if Groq is missing, times out, fails or returns malformed output. Return safe 503 errors, keep sensitive prompts and provider responses out of logs, and never expose raw provider exceptions.
-- Update Mermaid C1–C4 files in `docs/architecture/`, README and this guide to reflect the shipped implementation. The current frontend is static same-origin HTML/CSS/JavaScript, not Blazor WebAssembly.
-- Help should explain getting started, booking and 409 conflicts, real-time updates, roles, AI, Skills, OpenAPI and architecture. Swagger is available in Development only.
+- Keep Mermaid C1–C4 files in `docs/architecture/`, README and this guide aligned with the shipped Blazor WebAssembly client and its typed API/SignalR services.
+- Help and English documentation should explain direct AI booking requirements, confirmation-based availability suggestions, time-zone handling, conflict behavior, `Booked by AI` attribution, future-booking cancellation, realtime events, roles, Skills, OpenAPI and architecture. Swagger is available in Development only.
 - Test provider failures, allowlist/user scoping, Skills lifecycle/authorization, malformed and unsupported uploads, and retain all original SQL concurrency tests unchanged.
