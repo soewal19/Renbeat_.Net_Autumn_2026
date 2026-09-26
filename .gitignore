@@ -48,6 +48,8 @@ logs/
 secrets.json
 appsettings.Production.json
 appsettings.Staging.json
+appsettings.Development.json
+/users.txt
 
 # Azure publish profiles
 *.pubxml
