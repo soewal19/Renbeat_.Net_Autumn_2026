@@ -3,7 +3,7 @@
     {
       "team": "Product",
       "email": "olena.marchenko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image.png",
       "name": "Olena Marchenko",
       "role": "Product Manager",
       "location": "Kyiv"
@@ -11,7 +11,7 @@
     {
       "team": "Engineering",
       "email": "maksym.kovalenko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(1).png",
       "name": "Maksym Kovalenko",
       "role": "Backend Engineer",
       "location": "Lviv"
@@ -19,7 +19,7 @@
     {
       "team": "Design",
       "email": "iryna.shevchenko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(2).png",
       "name": "Iryna Shevchenko",
       "role": "Product Designer",
       "location": "Kyiv"
@@ -27,7 +27,7 @@
     {
       "team": "Engineering",
       "email": "danylo.bondar@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(3).png",
       "name": "Danylo Bondar",
       "role": "Frontend Engineer",
       "location": "Dnipro"
@@ -35,7 +35,7 @@
     {
       "team": "People",
       "email": "sofia.tkachenko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(4).png",
       "name": "Sofia Tkachenko",
       "role": "People Partner",
       "location": "Kyiv"
@@ -43,7 +43,7 @@
     {
       "team": "Engineering",
       "email": "artem.melnyk@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(5).png",
       "name": "Artem Melnyk",
       "role": "QA Engineer",
       "location": "Odesa"
@@ -51,7 +51,7 @@
     {
       "team": "Marketing",
       "email": "kateryna.boyko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(6).png",
       "name": "Kateryna Boyko",
       "role": "Content Strategist",
       "location": "Kyiv"
@@ -59,7 +59,7 @@
     {
       "team": "Engineering",
       "email": "vladyslav.kravets@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(7).png",
       "name": "Vladyslav Kravets",
       "role": "Platform Engineer",
       "location": "Lviv"
@@ -67,7 +67,7 @@
     {
       "team": "Customer Success",
       "email": "anastasiia.oliinyk@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(8).png",
       "name": "Anastasiia Oliinyk",
       "role": "Customer Success Manager",
       "location": "Kyiv"
@@ -75,7 +75,7 @@
     {
       "team": "Finance",
       "email": "mykhailo.polishchuk@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(9).png",
       "name": "Mykhailo Polishchuk",
       "role": "Financial Analyst",
       "location": "Vinnytsia"
@@ -83,7 +83,7 @@
     {
       "team": "Design",
       "email": "yuliia.savchenko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image.png",
       "name": "Yuliia Savchenko",
       "role": "UX Researcher",
       "location": "Kharkiv"
@@ -91,7 +91,7 @@
     {
       "team": "Engineering",
       "email": "andrii.hrytsenko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(1).png",
       "name": "Andrii Hrytsenko",
       "role": "Full-stack Engineer",
       "location": "Kyiv"
@@ -99,7 +99,7 @@
     {
       "team": "Operations",
       "email": "mariia.koval@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(2).png",
       "name": "Mariia Koval",
       "role": "Operations Lead",
       "location": "Lviv"
@@ -107,7 +107,7 @@
     {
       "team": "Sales",
       "email": "bohdan.rudenko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(3).png",
       "name": "Bohdan Rudenko",
       "role": "Account Executive",
       "location": "Kyiv"
@@ -115,7 +115,7 @@
     {
       "team": "Product",
       "email": "viktoriia.lysenko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(4).png",
       "name": "Viktoriia Lysenko",
       "role": "Business Analyst",
       "location": "Odesa"
@@ -123,7 +123,7 @@
     {
       "team": "Engineering",
       "email": "nazar.sydorenko@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(5).png",
       "name": "Nazar Sydorenko",
       "role": "DevOps Engineer",
       "location": "Dnipro"
@@ -131,7 +131,7 @@
     {
       "team": "Marketing",
       "email": "polina.marchuk@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(6).png",
       "name": "Polina Marchuk",
       "role": "Brand Designer",
       "location": "Kyiv"
@@ -139,7 +139,7 @@
     {
       "team": "Customer Success",
       "email": "taras.ivanchuk@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(7).png",
       "name": "Taras Ivanchuk",
       "role": "Support Specialist",
       "location": "Lviv"
@@ -147,7 +147,7 @@
     {
       "team": "Legal",
       "email": "alina.romaniuk@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(8).png",
       "name": "Alina Romaniuk",
       "role": "Legal Counsel",
       "location": "Kyiv"
@@ -155,7 +155,7 @@
     {
       "team": "Engineering",
       "email": "denys.shevchuk@example.test",
-      "avatar": null,
+      "avatar": "/images/users/Meeting%20room%20image%20(9).png",
       "name": "Denys Shevchuk",
       "role": "Tech Lead",
       "location": "Kharkiv"

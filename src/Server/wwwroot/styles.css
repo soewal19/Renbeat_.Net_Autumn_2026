@@ -14,3 +14,21 @@
 .booking-banner{position:relative;height:clamp(180px,26vw,300px);margin:0 0 22px;overflow:hidden;border-radius:16px;background:#e8edf4;box-shadow:0 14px 38px #17243c16}.booking-banner img{display:block;width:100%;height:100%;object-fit:cover;object-position:center 56%}.booking-banner:after{content:'';position:absolute;inset:35% 0 0;background:linear-gradient(0deg,#111c32b8,transparent);pointer-events:none}.booking-banner-caption{position:absolute;z-index:1;left:clamp(20px,4vw,44px);bottom:clamp(18px,3vw,34px);display:grid;gap:7px;color:white;text-shadow:0 2px 12px #101c3266}.booking-banner-caption span{font-size:10px;font-weight:700;letter-spacing:2px}.booking-banner-caption strong{font:700 clamp(22px,3.2vw,38px)/1.15 Manrope,sans-serif;letter-spacing:-.7px}@media(max-width:600px){.booking-banner{height:170px;border-radius:12px;margin-bottom:16px}.booking-banner img{object-position:58% center}}
 
 .ai-booking-badge{display:inline-block;margin-left:.4rem;padding:.2rem .48rem;border-radius:999px;background:#edf2ff;color:#405daf;font-size:10px;font-weight:700;white-space:nowrap}.ai-booking-proposal{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:.75rem;padding:.85rem 1rem;background:white;border:1px solid #dfe6f3;border-radius:10px}.ai-booking-proposal p{margin:0;color:#35425b;font-weight:600}.ai-booking-proposal .button{flex:none}@media(max-width:600px){.ai-booking-proposal{align-items:flex-start;flex-direction:column}}
+.ai-chat-panel { display: grid; gap: 1rem; }
+.ai-chat-history { display: grid; gap: .85rem; max-height: 55vh; overflow-y: auto; }
+.ai-chat-message { border: 1px solid var(--line, #e7eaf0); border-radius: 14px; padding: 1rem; background: #fff; }
+.ai-chat-message.user { background: #f4f7fb; margin-left: min(8vw, 4rem); }
+.ai-chat-message.assistant { margin-right: min(8vw, 4rem); }
+.ai-chat-message p { margin: .5rem 0 0; white-space: pre-wrap; }
+.ai-chat-form { display: flex; gap: .75rem; align-items: end; }
+.ai-chat-form textarea { flex: 1; resize: vertical; min-height: 4rem; }
+.ai-chat-panel > small { color: var(--muted, #667085); }
+.room-pagination{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:16px 0 14px}.room-pagination .pagination-summary{flex-basis:100%;margin:3px 0 0;text-align:center}.room-pagination .page-button{height:30px;min-width:30px;font-size:11px}.room-pagination .page-button:focus-visible{outline:3px solid #3566e844;outline-offset:2px}
+.password-hint{margin-top:-8px;color:#748098;font-size:11px}
+
+.my-booking-row{grid-template-columns:1.1fr 1fr 1fr 1.1fr .8fr}.my-booking-row.ai-generated-booking{background:#f4f0ff;border-top-color:#e4dafa}.my-booking-row.ai-generated-booking>span{color:#4f3788}.booking-origin-badge{display:inline-flex;align-items:center;border-radius:999px;padding:.3rem .6rem;font-size:10px;font-weight:700;white-space:nowrap}.booking-origin-badge.ai{background:#6846b5;color:#fff}.booking-origin-badge.user{background:#e9f6ef;color:#28744d}@media(max-width:680px){.my-booking-row{grid-template-columns:1fr 1fr}}
+
+/* Subtle image feedback on pointer hover; honor reduced-motion preferences. */
+.directory-avatar,.directory-room-image,.resource-thumbnail,.selected-room-image,.profile-avatar,.room-image-preview,.resource-image-upload img,.booking-banner img{transition:transform .28s cubic-bezier(.2,.7,.2,1),filter .28s ease;transform-origin:center;}
+.directory-card:hover .directory-avatar,.directory-card:hover .directory-room-image,.resource-card:hover .resource-thumbnail,.schedule-panel:hover .selected-room-image,.profile-avatar:hover,.room-image-upload:hover .room-image-preview,.resource-image-upload:hover img,.booking-banner:hover img{transform:scale(1.045);filter:saturate(1.08) brightness(1.03);}
+@media(prefers-reduced-motion:reduce){.directory-avatar,.directory-room-image,.resource-thumbnail,.selected-room-image,.profile-avatar,.room-image-preview,.resource-image-upload img,.booking-banner img{transition:none!important}.directory-card:hover .directory-avatar,.directory-card:hover .directory-room-image,.resource-card:hover .resource-thumbnail,.schedule-panel:hover .selected-room-image,.profile-avatar:hover,.room-image-upload:hover .room-image-preview,.resource-image-upload:hover img,.booking-banner:hover img{transform:none;filter:none;}}

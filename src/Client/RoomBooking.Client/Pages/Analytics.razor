@@ -1,0 +1,211 @@
+@page "/analytics"
+@using Microsoft.AspNetCore.Authorization
+@using RoomBooking.Shared.Dtos.Analytics
+@attribute [Authorize(Roles = "Admin")]
+@inject IAnalyticsClient AnalyticsApi
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Analytics | Roomly</PageTitle>
+
+<main class="analytics-page">
+    <header class="analytics-heading">
+        <div>
+            <div class="analytics-eyebrow"><i></i> OPERATIONS OVERVIEW</div>
+            <h1>Booking analytics</h1>
+            <p>Understand room demand, booking activity, and how your spaces are used.</p>
+        </div>
+        <div class="analytics-controls">
+            <div class="analytics-period" role="group" aria-label="Analytics period">
+                @foreach (var period in Periods)
+                {
+                    <button type="button" class="@(selectedPeriod == period.Key ? "selected" : "")" aria-pressed="@(selectedPeriod == period.Key)" disabled="@isLoading" @onclick="() => ChangePeriodAsync(period.Key)">@period.Label</button>
+                }
+            </div>
+            <button class="analytics-refresh" type="button" disabled="@isLoading" @onclick="LoadDataAsync" aria-label="Refresh analytics"><span class="@(isLoading ? "is-spinning" : "")">↻</span> Refresh</button>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <section class="analytics-error" role="alert"><strong>Analytics could not be loaded</strong><p>@errorMessage</p><button type="button" @onclick="LoadDataAsync">Try again</button></section>
+    }
+    else if (isLoading && dashboard is null)
+    {
+        <section class="analytics-skeleton" aria-label="Loading analytics">@for (var i = 0; i < 4; i++) { <div></div> }</section>
+        <div class="analytics-skeleton-chart"></div>
+    }
+    else if (dashboard is not null)
+    {
+        var stats = dashboard.BookingStatistics;
+        var slotCount = dashboard.RoomUtilisation.Sum(room => room.TotalSlots);
+        var bookedCount = dashboard.RoomUtilisation.Sum(room => room.BookedSlots);
+        var occupancy = slotCount == 0 ? 0 : 100d * bookedCount / slotCount;
+        <section class="analytics-kpis" aria-label="Key metrics">
+            <article class="analytics-kpi"><div class="kpi-label">Total bookings <span class="kpi-blue">↗</span></div><strong>@stats.TotalBookings</strong><small>in the selected period</small></article>
+            <article class="analytics-kpi"><div class="kpi-label">Space occupancy <span class="kpi-green">◉</span></div><strong>@occupancy.ToString("0")<small>%</small></strong><small>@bookedCount of @slotCount scheduled slots booked</small><div class="kpi-progress"><i style="width:@($"{Math.Clamp(occupancy, 0, 100):0}%")"></i></div></article>
+            <article class="analytics-kpi"><div class="kpi-label">Active bookers <span class="kpi-purple">◎</span></div><strong>@stats.UniqueUsers</strong><small>unique users in the selected period</small></article>
+            <article class="analytics-kpi"><div class="kpi-label">Available spaces <span class="kpi-amber">⌂</span></div><strong>@dashboard.RoomUtilisation.Count</strong><small>rooms with scheduled bookable slots</small><div class="room-dots">@for (var i = 0; i < Math.Min(dashboard.RoomUtilisation.Count, 12); i++) { <i></i> }</div></article>
+        </section>
+
+        <section class="analytics-grid">
+            <article class="analytics-panel">
+                <header><div><label>BOOKING ACTIVITY</label><h2>Bookings over time</h2><p>Daily activity for @PeriodLabel.ToLowerInvariant()</p></div><span>@PeriodLabel</span></header>
+                @if (stats.TotalBookings == 0) { <EmptyChart Message="No bookings in this period yet" Detail="Room booking activity will appear here." /> }
+                else { <div id="analytics-bookings" class="analytics-chart tall-chart" role="img" aria-label="Daily room bookings"></div> }
+            </article>
+            <article class="analytics-panel">
+                <header><div><label>CAPACITY</label><h2>Space occupancy</h2><p>Booked versus available slots</p></div></header>
+                @if (slotCount == 0) { <EmptyChart Message="No scheduled slots" Detail="Add rooms and bookable times to see occupancy." /> }
+                else { <div id="analytics-occupancy" class="analytics-chart" role="img" aria-label="Booked and available room slots"></div> }
+                <div class="analytics-legend"><span><i></i>Booked <b>@bookedCount</b></span><span><i></i>Available <b>@(slotCount - bookedCount)</b></span></div>
+            </article>
+            <article class="analytics-panel">
+                <header><div><label>ROOM PERFORMANCE</label><h2>Most used rooms</h2><p>Occupancy across scheduled slots</p></div></header>
+                @if (dashboard.RoomUtilisation.Count == 0) { <EmptyChart Message="No rooms to compare" Detail="Create rooms to see their utilization." /> }
+                else { <div id="analytics-rooms" class="analytics-chart room-chart" role="img" aria-label="Room utilization"></div> }
+            </article>
+            <article class="analytics-panel">
+                <header><div><label>TEAM ACTIVITY</label><h2>Most active bookers</h2><p>Top people by confirmed bookings</p></div></header>
+                @if (dashboard.TopUsers.Count == 0)
+                {
+                    <div class="analytics-empty"><span>◎</span><div><strong>No booking activity yet</strong><p>User rankings will appear when a room is booked.</p></div></div>
+                }
+                else
+                {
+                    <div class="analytics-user-list">
+                        @for (var index = 0; index < dashboard.TopUsers.Count; index++)
+                        {
+                            var user = dashboard.TopUsers[index];
+                            var maxCount = Math.Max(1, dashboard.TopUsers.Max(item => item.BookingCount));
+                            <div class="analytics-user-row"><span class="user-rank">@((index + 1).ToString("00"))</span><span class="user-initials">@Initials(user.UserEmail)</span><div class="user-activity"><strong title="@user.UserEmail">@user.UserEmail</strong><div><i style="width:@($"{100d * user.BookingCount / maxCount:0}%")"></i></div></div><b>@user.BookingCount <small>@(user.BookingCount == 1 ? "booking" : "bookings")</small></b></div>
+                        }
+                    </div>
+                }
+            </article>
+        </section>
+        <footer class="analytics-footer"><span><i></i> Based on confirmed room bookings</span><span>Average booking length <b>@stats.AverageDurationMinutes.ToString("0") min</b></span></footer>
+    }
+</main>
+
+@code {
+    private static readonly (string Key, string Label)[] Periods = [("Day", "Today"), ("Week", "This week"), ("Month", "This month")];
+    private AnalyticsDashboardDto? dashboard;
+    private bool isLoading = true;
+    private bool chartsPending;
+    private string selectedPeriod = "Week";
+    private string? errorMessage;
+    private CancellationTokenSource loadCancellation = new();
+    private string PeriodLabel => selectedPeriod switch { "Day" => "TODAY", "Month" => "THIS MONTH", _ => "THIS WEEK" };
+
+    protected override async Task OnInitializedAsync() => await LoadDataAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!chartsPending || dashboard is null) return;
+        chartsPending = false;
+        try { await RenderChartsAsync(); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private async Task ChangePeriodAsync(string period)
+    {
+        if (selectedPeriod == period) return;
+        selectedPeriod = period;
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        loadCancellation.Cancel();
+        loadCancellation.Dispose();
+        loadCancellation = new CancellationTokenSource();
+        var token = loadCancellation.Token;
+        isLoading = true;
+        errorMessage = null;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            dashboard = await AnalyticsApi.GetDashboardAsync(selectedPeriod, token);
+            if (dashboard is null) errorMessage = "The analytics service returned no data. Please try again.";
+            chartsPending = dashboard is not null;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            if (!token.IsCancellationRequested) errorMessage = "Check your connection and try again.";
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested) { isLoading = false; await InvokeAsync(StateHasChanged); }
+        }
+    }
+
+    private async Task RenderChartsAsync()
+    {
+        if (dashboard is null) return;
+        var stats = dashboard.BookingStatistics;
+        var allSlots = dashboard.RoomUtilisation.Sum(room => room.TotalSlots);
+        var booked = dashboard.RoomUtilisation.Sum(room => room.BookedSlots);
+        var dates = DateCategories(stats);
+        if (stats.TotalBookings > 0)
+        {
+            await JS.InvokeVoidAsync("roomlyCharts.render", "analytics-bookings", new
+            {
+                chart = new { type = "area", height = 285, toolbar = new { show = false }, zoom = new { enabled = false }, animations = new { enabled = true, easing = "easeinout", speed = 850, animateGradually = new { enabled = true, delay = 70 } } },
+                series = new[] { new { name = "Bookings", data = dates.Values } }, xaxis = new { categories = dates.Labels, axisBorder = new { show = false }, axisTicks = new { show = false }, labels = new { style = new { colors = "#8993a7", fontSize = "11px" } } },
+                yaxis = new { min = 0, forceNiceScale = true, labels = new { style = new { colors = "#8993a7", fontSize = "11px" } } }, grid = new { borderColor = "#edf0f5", strokeDashArray = 4 },
+                stroke = new { curve = "smooth", width = 3 }, colors = new[] { "#4776e6" }, fill = new { type = "gradient", gradient = new { opacityFrom = .28, opacityTo = .015, stops = new[] { 0, 90, 100 } } },
+                markers = new { size = 0, hover = new { size = 5 } }, dataLabels = new { enabled = false }, tooltip = new { theme = "light" }, legend = new { show = false }
+            });
+        }
+        if (allSlots > 0)
+        {
+            await JS.InvokeVoidAsync("roomlyCharts.render", "analytics-occupancy", new
+            {
+                chart = new { type = "donut", height = 245, animations = new { enabled = true, easing = "easeinout", speed = 850 }, toolbar = new { show = false } },
+                series = new[] { booked, Math.Max(0, allSlots - booked) }, labels = new[] { "Booked", "Available" }, colors = new[] { "#4977e7", "#e9edf5" }, stroke = new { width = 0 },
+                dataLabels = new { enabled = false }, legend = new { show = false }, plotOptions = new { pie = new { donut = new { size = "76%", labels = new { show = true, total = new { show = true, label = "Total slots", color = "#8490a5", formatter = "__totalSlots__" } } } } }
+            }, allSlots);
+        }
+        if (dashboard.RoomUtilisation.Count > 0)
+        {
+            var rooms = dashboard.RoomUtilisation.Take(6).Reverse().ToArray();
+            await JS.InvokeVoidAsync("roomlyCharts.render", "analytics-rooms", new
+            {
+                chart = new { type = "bar", height = Math.Max(210, rooms.Length * 42), toolbar = new { show = false }, animations = new { enabled = true, easing = "easeinout", speed = 850, animateGradually = new { enabled = true, delay = 90 } } },
+                series = new[] { new { name = "Occupancy", data = rooms.Select(room => Math.Round(room.UtilisationPercentage, 1)).ToArray() } }, plotOptions = new { bar = new { horizontal = true, barHeight = "48%", borderRadius = 5 } },
+                colors = new[] { "#4fa88a" }, dataLabels = new { enabled = true, offsetX = 4, formatter = "__percent__" },
+                xaxis = new { categories = rooms.Select(room => ShortRoomName(room.ResourceName)).ToArray(), min = 0, max = 100, labels = new { formatter = "__percent__" } },
+                grid = new { borderColor = "#edf0f5", strokeDashArray = 4 }, tooltip = new { y = new { formatter = "__percent__" } }, legend = new { show = false }
+            });
+        }
+    }
+
+    private static (string[] Labels, int[] Values) DateCategories(BookingStatisticsDto stats)
+    {
+        var counts = stats.BookingsByDate.ToDictionary(item => item.Date, item => item.Count);
+        var today = DateTime.UtcNow.Date;
+        var start = stats.Period.Equals("Day", StringComparison.OrdinalIgnoreCase) ? today : stats.Period.Equals("Month", StringComparison.OrdinalIgnoreCase) ? new DateTime(today.Year, today.Month, 1) : today.AddDays(-(int)today.DayOfWeek);
+        var end = stats.Period.Equals("Month", StringComparison.OrdinalIgnoreCase) ? today : stats.Period.Equals("Day", StringComparison.OrdinalIgnoreCase) ? today : start.AddDays(6);
+        var labels = new List<string>();
+        var values = new List<int>();
+        for (var day = start; day <= end; day = day.AddDays(1))
+        {
+            labels.Add(stats.Period.Equals("Month", StringComparison.OrdinalIgnoreCase) ? day.ToString("d") : day.ToString("ddd"));
+            values.Add(counts.GetValueOrDefault(day.ToString("yyyy-MM-dd")));
+        }
+        return (labels.ToArray(), values.ToArray());
+    }
+
+    private static string Initials(string email)
+    {
+        var name = email.Split('@', 2)[0];
+        var parts = name.Split(new[] { '.', '_', '-', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1 ? $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[1][0])}" : name[..Math.Min(name.Length, 2)].ToUpperInvariant();
+    }
+
+    private static string ShortRoomName(string value) => value.Length > 20 ? value[..18] + "…" : value;
+    public void Dispose() { loadCancellation.Cancel(); loadCancellation.Dispose(); }
+}

@@ -22,7 +22,7 @@
                 <form class="form-stack" @onsubmit="AuthenticateAsync" @onsubmit:preventDefault>
                     @if (_registering) { <label>Full name<input @bind="_displayName" autocomplete="name" maxlength="200" required /></label> }
                     <label>Email address<input @bind="_email" type="email" autocomplete="email" required /></label>
-                    <label>Password<input @bind="_password" type="password" autocomplete="current-password" minlength="6" required /></label>
+                    <label>Password<input @bind="_password" type="password" autocomplete="@(_registering ? "new-password" : "current-password")" minlength="6" title="Use at least 6 characters, including uppercase, lowercase, and a number." required /></label>@if (_registering) { <small class="password-hint">Use at least 6 characters with uppercase, lowercase, and a number.</small> }
                     <button class="button button-primary button-wide" type="submit" disabled="@_busy">@(_registering ? "Create account" : "Sign in") <span>→</span></button>
                 </form>
                 @if (!string.IsNullOrWhiteSpace(_message)) { <p class="message" role="alert">@_message</p> }
@@ -36,7 +36,7 @@ else
     <main class="page-shell">
         <header class="blazor-header"><a class="brand" href="/" @onclick:preventDefault="true" @onclick='() => ShowView("rooms")'><span class="brand-mark">R</span><span>roomly<span class="brand-dot">.</span></span></a>
             <div class="blazor-quick-search"><input aria-label="Search people and rooms" placeholder="Quick search people and rooms…" value="@_quickQuery" @oninput="QuickSearchChanged" />@if (_quickResults is not null && _quickQuery.Length >= 2) { <div class="blazor-search-results">@foreach (var person in _quickResults.Users.Take(4)) { <button @onclick="() => OpenPersonAsync(person)"><strong>@person.Name</strong><small>Person · @person.Email</small></button> } @foreach (var room in _quickResults.Rooms.Take(4)) { <button @onclick="() => OpenRoomAsync(room)"><strong>@room.Name</strong><small>Room · @room.Description</small></button> }</div> }</div>
-            <div class="topbar-right"><span class="connection @(_realtimeConnected ? "" : "offline")"><i></i>@(_realtimeConnected ? "Live updates" : "Reconnecting")</span><span class="user-label">@_user.DisplayName</span><button class="button button-quiet" @onclick="LogoutAsync">Sign out</button></div>
+            <div class="topbar-right"><span class="connection @(_realtimeConnected ? "" : "offline")"><i></i>@(_realtimeConnected ? "Live updates" : "Reconnecting")</span>@if (_user.AvatarUrl is not null) { <img class="header-avatar" src="@ProfileAvatarUrl" alt="" /> } else { <span class="header-avatar-fallback" aria-hidden="true">@DisplayInitials(_user.DisplayName)</span> }<span class="user-label">@_user.DisplayName</span><button class="button button-quiet" @onclick="LogoutAsync">Sign out</button></div>
         </header>
         <nav class="workspace-nav" aria-label="Workspace">
             <button class="workspace-tab @Active("rooms")" @onclick='() => ShowView("rooms")'>Rooms & bookings</button>
@@ -44,16 +44,30 @@ else
             <button class="workspace-tab @Active("directory")" @onclick='() => ShowView("directory")'>Directory</button>
             <button class="workspace-tab @Active("profile")" @onclick='() => ShowView("profile")'>My profile</button>
             @if (IsAdmin) { <button class="workspace-tab @Active("admin")" @onclick='() => ShowView("admin")'>Admin</button> }
-            <a class="workspace-tab" href="/index.html">AI workspace</a>
+            @if (IsAdmin) { <a class="workspace-tab" href="/analytics">Analytics</a> }
+            <button class="workspace-tab @Active("ai")" @onclick='() => ShowView("ai")'>AI booking</button>
             <button class="workspace-tab @Active("help")" @onclick='() => ShowView("help")'>Help</button>
         </nav>
 
-        @if (_view == "rooms")
+        @if (_view == "ai")
+        {
+            <AiWorkspace BookingCompleted="AiBookingCompletedAsync" />
+        }
+        else if (_view == "rooms")
         {
             <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> WORKSPACE</div><h1>Find your <span>room.</span></h1><p class="muted">Choose a meeting room and a time that works for you.</p></div></div>
             <div class="content-grid">
                 <aside class="panel resource-panel"><div class="panel-heading"><div><span class="section-kicker">YOUR SPACES</span><h2>Meeting rooms</h2></div><span class="count-pill">@_resources.Count</span></div>
-                    <div class="resource-list">@foreach (var room in _resources) { <article class="room-admin-item"><button class="resource-card @(_selectedRoom?.Id == room.Id ? "selected" : "")" @onclick="() => SelectRoomAsync(room)"><img class="resource-thumbnail" src="@room.ImageUrl" alt="@room.Name" loading="lazy" decoding="async" /><span class="room-text"><span class="room-name">@room.Name</span><span class="room-description">@room.Description</span></span></button>@if (IsAdmin) { <div class="room-admin-actions"><button type="button" @onclick="() => EditRoom(room)">Edit</button><button type="button" @onclick="() => DeleteRoomAsync(room)">Delete</button></div> }</article> }</div>
+                    <div class="resource-list">@foreach (var room in VisibleRooms) { <article class="room-admin-item"><button class="resource-card @(_selectedRoom?.Id == room.Id ? "selected" : "")" @onclick="() => SelectRoomAsync(room)"><img class="resource-thumbnail" src="@room.ImageUrl" alt="@room.Name" loading="lazy" decoding="async" /><span class="room-text"><span class="room-name">@room.Name</span><span class="room-description">@room.Description</span></span></button>@if (IsAdmin) { <div class="room-admin-actions"><button type="button" @onclick="() => EditRoom(room)">Edit</button><button type="button" @onclick="() => DeleteRoomAsync(room)">Delete</button></div> }</article> }</div>
+                    @if (RoomsPageCount > 1)
+                    {
+                        <nav class="room-pagination" aria-label="Meeting room pages">
+                            <button type="button" class="page-button" disabled="@(_roomsPage <= 1)" @onclick="() => ChangeRoomsPageAsync(_roomsPage - 1)">Previous</button>
+                            @for (var page = 1; page <= RoomsPageCount; page++) { var pageNumber = page;<button type="button" class="page-button" aria-current="@(_roomsPage == pageNumber ? "page" : null)" @onclick="() => ChangeRoomsPageAsync(pageNumber)">@pageNumber</button> }
+                            <button type="button" class="page-button" disabled="@(_roomsPage >= RoomsPageCount)" @onclick="() => ChangeRoomsPageAsync(_roomsPage + 1)">Next</button>
+                            <span class="pagination-summary">Showing @RoomRangeStart–@RoomRangeEnd of @_resources.Count</span>
+                        </nav>
+                    }
                     @if (IsAdmin) { <button class="button button-primary" @onclick="StartNewRoom">＋ Add room</button> }
                 </aside>
                 <section class="panel schedule-panel">
@@ -81,7 +95,7 @@ else
         else if (_view == "bookings")
         {
             <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> YOUR SCHEDULE</div><h1>My <span>bookings.</span></h1></div></div>
-            <section class="panel feature-panel"><div class="booking-list"><div class="booking-row header"><span>Room</span><span>Time slot</span><span>Booked at</span><span>Action</span></div>@foreach (var booking in _myBookings) { <div class="booking-row"><span>@booking.ResourceName @if (booking.IsAiGenerated) { <span class="ai-booking-badge">Booked by AI</span> }</span><span>@booking.SlotStartUtc.ToLocalTime().ToString("g")</span><span>@booking.CreatedAtUtc.ToLocalTime().ToString("d")</span><span>@if (booking.SlotStartUtc > DateTimeOffset.UtcNow) { <button class="button button-quiet" @onclick="() => CancelBookingAsync(booking)">Cancel booking</button> }</span></div> }</div>@if (_myBookings.Count == 0) { <p class="muted">You have no bookings yet.</p> }</section>
+            <section class="panel feature-panel"><div class="booking-list"><div class="booking-row my-booking-row header"><span>Room</span><span>Time slot</span><span>Booked at</span><span>Booked by</span><span>Action</span></div>@foreach (var booking in VisibleBookings) { <div class="booking-row my-booking-row @(booking.IsAiGenerated ? "ai-generated-booking" : "")"><span>@booking.ResourceName</span><span>@booking.SlotStartUtc.ToLocalTime().ToString("g")</span><span>@booking.CreatedAtUtc.ToLocalTime().ToString("d")</span><span><span class="booking-origin-badge @(booking.IsAiGenerated ? "ai" : "user")">@(booking.IsAiGenerated ? "Booked by AI" : "Booked by me")</span></span><span>@if (booking.SlotStartUtc > DateTimeOffset.UtcNow) { <button class="button button-quiet" @onclick="() => CancelBookingAsync(booking)">Cancel booking</button> }</span></div> }</div>@if (_myBookings.Count > BookingPageSize) { <nav class="pagination" aria-label="My bookings pages"><button class="page-button" @onclick="() => ChangeBookingsPageAsync(_bookingsPage - 1)" disabled="@(_bookingsPage <= 1)">Previous</button><span class="pagination-summary">Page @_bookingsPage of @BookingsPageCount · Showing @BookingRangeStart–@BookingRangeEnd of @_myBookings.Count bookings</span><button class="page-button" @onclick="() => ChangeBookingsPageAsync(_bookingsPage + 1)" disabled="@(_bookingsPage >= BookingsPageCount)">Next</button></nav> }@if (_myBookings.Count == 0) { <p class="muted">You have no bookings yet.</p> }</section>
         }
         else if (_view == "directory")
         {
@@ -94,7 +108,7 @@ else
         else if (_view == "profile")
         {
             <div class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> ACCOUNT SETTINGS</div><h1>My <span>profile.</span></h1></div></div>
-            <div class="profile-layout"><form class="panel profile-card form-stack" @onsubmit="SaveProfileAsync" @onsubmit:preventDefault><div class="avatar-editor"><img class="profile-avatar" src="@(_user.AvatarUrl ?? "/images/placeholders/avatar.svg")" alt="Profile avatar" loading="lazy" /><label class="button button-quiet upload-button">Upload photo<InputFile OnChange="AvatarSelectedAsync" accept="image/jpeg,image/png,image/webp" /></label>@if (_user.AvatarUrl is not null) { <button type="button" class="button button-quiet" @onclick="RemoveAvatarAsync">Remove photo</button> }<small>JPEG, PNG or WebP · up to 10 MB</small></div><h2>@_user.DisplayName</h2><label>Display name<input @bind="_profileName" required maxlength="200" /></label><label>Email address<input value="@_user.Email" readonly /></label><label>Phone number<input @bind="_profilePhone" maxlength="32" /></label><button class="button button-primary" type="submit">Save profile</button></form>
+            <div class="profile-layout"><form class="panel profile-card form-stack" @onsubmit="SaveProfileAsync" @onsubmit:preventDefault><div class="avatar-editor"><img class="profile-avatar" src="@ProfileAvatarUrl" alt="Profile avatar" loading="lazy" /><label class="button button-quiet upload-button">Upload photo<InputFile OnChange="AvatarSelectedAsync" accept="image/jpeg,image/png,image/webp" /></label>@if (_user.AvatarUrl is not null) { <button type="button" class="button button-quiet" @onclick="RemoveAvatarAsync">Remove photo</button> }<small>JPEG, PNG or WebP · up to 10 MB</small></div><h2>@_user.DisplayName</h2><label>Display name<input @bind="_profileName" required maxlength="200" /></label><label>Email address<input value="@_user.Email" readonly /></label><label>Phone number<input @bind="_profilePhone" maxlength="32" /></label><button class="button button-primary" type="submit">Save profile</button></form>
                 <form class="panel profile-card form-stack" @onsubmit="ChangePasswordAsync" @onsubmit:preventDefault><h2>Change password</h2><label>Current password<input @bind="_currentPassword" type="password" required /></label><label>New password<input @bind="_newPassword" type="password" minlength="6" required /></label><button class="button button-primary" type="submit">Update password</button></form></div>
         }
         else if (_view == "admin" && IsAdmin)
@@ -109,12 +123,12 @@ else
             <div class="help-grid">
                 <article class="panel help-card"><h2>Getting started</h2><p>Choose an active room, select a date, and book a slot marked Available. Your bookings are tied to your account and appear under My bookings.</p></article>
                 <article class="panel help-card"><h2>Roles and access</h2><p>Users can view rooms and schedules, book available slots, manage their profile, and cancel their own future bookings. Admins can also manage rooms and availability and view all bookings.</p></article>
-                <article class="panel help-card"><h2>Autonomous AI booking</h2><p>Open <a class="text-link" href="/index.html">AI workspace</a> and give a clear request with the exact room, date, and start time, for example: “Book Cedar on September 29 at 10:00 AM.” The assistant uses your browser time zone unless you specify one. It asks for details rather than guessing.</p></article>
+                <article class="panel help-card"><h2>Autonomous AI booking</h2><p>Open <button type="button" class="text-link" @onclick='() => ShowView("ai")'>AI booking tab</button> and give a clear request with the exact room, date, and start time, for example: “Book Cedar on September 29 at 10:00 AM.” The assistant uses your browser time zone unless you specify one. It asks for details rather than guessing.</p></article>
                 <article class="panel help-card"><h2>Availability suggestions</h2><p>Availability questions only return suggestions. Review the proposed room and slot, then select Confirm booking to create the booking. If you want a direct booking, state that explicitly and include the exact room, date, and start time.</p></article>
                 <article class="panel help-card"><h2>Conflicts and live updates</h2><p>A time slot can have only one booking. If another user books it first, you will see a conflict message; choose another available slot. SignalR updates open schedules after a booking or cancellation without requiring a page refresh.</p></article>
                 <article class="panel help-card"><h2>Cancel a booking</h2><p>In My bookings, select Cancel booking next to one of your future bookings. Cancellation is unavailable after the slot starts. The AI assistant cannot cancel bookings for you.</p></article>
                 <article class="panel help-card"><h2>AI availability and privacy</h2><p>AI assistance requires sign-in and a configured provider. If it is unavailable, room browsing and manual booking continue to work. AI booking requests are checked by the server, and the AI cannot manage another user's bookings.</p></article>
-                <article class="panel help-card"><h2>Technical documentation</h2><p>Read the <a class="text-link" href="/docs/ai-assisted-booking.md" target="_blank" rel="noopener">AI booking guide</a> for command examples and operator configuration. Explore the <a class="text-link" href="/index.html">AI workspace</a> for the full Help section, Swagger/OpenAPI, and C4 architecture diagrams.</p></article>
+                <article class="panel help-card"><h2>Technical documentation</h2><p>Read the <a class="text-link" href="/docs/ai-assisted-booking.md" target="_blank" rel="noopener">AI booking guide</a> for command examples and operator configuration. Swagger/OpenAPI is available in Development, and C4 diagrams are linked from the project documentation.</p></article>
             </div>
         }
         @if (!string.IsNullOrWhiteSpace(_message) && _view != "") { <div class="toast show @(_isError ? "error" : "")" role="status">@_message</div> }
@@ -126,7 +140,8 @@ else
     private bool _registering, _busy, _realtimeConnected, _isError, _roomActive = true;
     private string _email = "", _password = "", _displayName = "", _message = "", _view = "rooms";
     private string _profileName = "", _profilePhone = "", _currentPassword = "", _newPassword = "";
-    private string _dateText = DateTime.Today.ToString("yyyy-MM-dd");
+    // Demo slots are seeded for the next UTC day; start there so the schedule is populated on first load.
+    private string _dateText = DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-dd");
     private DateTime? _slotStart, _slotEnd;
     private string _roomName = "", _roomDescription = "", _directoryQuery = "", _directoryKind = "users", _quickQuery = "";
     private string _roomImagePreview = "/images/rooms/no_image_rooms.png";
@@ -141,10 +156,21 @@ else
     private IReadOnlyList<BookingDto> _myBookings = [], _adminBookings = [];
     private AdminOverview? _overview;
     private string _scheduleMessage = "";
-    private int _page = 1;
+    private int _page = 1, _bookingsPage = 1;
     private CancellationTokenSource? _quickSearchCts;
     private CancellationTokenSource? _directorySearchCts;
     private const int PageSize = 8;
+    private const int BookingPageSize = 10;
+    private int BookingsPageCount => Math.Max(1, (int)Math.Ceiling(_myBookings.Count / (double)BookingPageSize));
+    private int BookingRangeStart => _myBookings.Count == 0 ? 0 : (_bookingsPage - 1) * BookingPageSize + 1;
+    private int BookingRangeEnd => Math.Min(_bookingsPage * BookingPageSize, _myBookings.Count);
+    private IEnumerable<BookingDto> VisibleBookings => _myBookings.Skip((_bookingsPage - 1) * BookingPageSize).Take(BookingPageSize);
+    private const int RoomsPageSize = 5;
+    private int _roomsPage = 1;
+    private int RoomsPageCount => Math.Max(1, (int)Math.Ceiling(_resources.Count / (double)RoomsPageSize));
+    private int RoomRangeStart => _resources.Count == 0 ? 0 : (_roomsPage - 1) * RoomsPageSize + 1;
+    private int RoomRangeEnd => Math.Min(_roomsPage * RoomsPageSize, _resources.Count);
+    private IEnumerable<ResourceDto> VisibleRooms => _resources.Skip((_roomsPage - 1) * RoomsPageSize).Take(RoomsPageSize);
     private bool IsAdmin => _user?.Roles.Contains("Admin", StringComparer.OrdinalIgnoreCase) == true;
     private string Active(string view) => _view == view ? "active" : string.Empty;
     private int PageCount => Math.Max(1, (int)Math.Ceiling((_directoryKind == "users" ? _directoryResults.Users.Count : _directoryResults.Rooms.Count) / (double)PageSize));
@@ -179,22 +205,38 @@ else
         if (_user is null) return;
         _profileName = _user.DisplayName; _profilePhone = _user.PhoneNumber ?? string.Empty;
         _resources = await ResourcesApi.ListAsync();
+        _roomsPage = 1;
         if (_resources.Count > 0) await SelectRoomAsync(_resources[0]);
         _myBookings = await BookingsApi.MineAsync();
         try { await Realtime.StartAsync(); _realtimeConnected = Realtime.IsConnected; } catch { _realtimeConnected = false; }
         if (IsAdmin) await LoadAdminAsync();
     }
 
+    private async Task AiBookingCompletedAsync() { _bookingsPage = 1; _myBookings = await BookingsApi.MineAsync(); if (_selectedRoom is not null) await LoadScheduleAsync(); }
     private async Task ShowView(string view)
     {
         if (_selectedRoom is not null && Realtime.IsConnected) await Realtime.LeaveResourceAsync(_selectedRoom.Id);
-        _view = view; _message = ""; _page = 1;
+        _view = view; _message = ""; _page = 1; _bookingsPage = 1;
         if (view == "bookings") _myBookings = await BookingsApi.MineAsync();
         if (view == "directory") await SearchDirectoryAsync();
         if (view == "admin" && IsAdmin) await LoadAdminAsync();
         if (view == "rooms" && _selectedRoom is not null) await SelectRoomAsync(_selectedRoom);
     }
 
+    private Task ChangeBookingsPageAsync(int page)
+    {
+        if (page >= 1 && page <= BookingsPageCount) _bookingsPage = page;
+        return Task.CompletedTask;
+    }
+
+    private async Task ChangeRoomsPageAsync(int page)
+    {
+        if (page < 1 || page > RoomsPageCount || page == _roomsPage) return;
+        _roomsPage = page;
+        var pageRooms = VisibleRooms.ToList();
+        if (_selectedRoom is not null && pageRooms.All(room => room.Id != _selectedRoom.Id) && pageRooms.Count > 0)
+            await SelectRoomAsync(pageRooms[0]);
+    }
     private async Task SelectRoomAsync(ResourceDto room)
     {
         if (_selectedRoom is not null && Realtime.IsConnected) await Realtime.LeaveResourceAsync(_selectedRoom.Id);
@@ -215,7 +257,7 @@ else
     private async Task BookAsync(TimeSlotDto slot)
     {
         _busy = true; _scheduleMessage = "";
-        try { await BookingsApi.CreateAsync(new CreateBookingRequest(slot.Id)); _scheduleMessage = "Booking confirmed."; await LoadScheduleAsync(); _myBookings = await BookingsApi.MineAsync(); }
+        try { await BookingsApi.CreateAsync(new CreateBookingRequest(slot.Id)); _scheduleMessage = "Booking confirmed."; await LoadScheduleAsync(); _bookingsPage = 1; _myBookings = await BookingsApi.MineAsync(); }
         catch (ApiException ex) when (ex.IsConflict) { _scheduleMessage = "This slot was just booked by another user."; await LoadScheduleAsync(); }
         catch (Exception ex) { _scheduleMessage = ex.Message; }
         finally { _busy = false; }
@@ -224,12 +266,13 @@ else
     private Task OnSlotBookedAsync(SlotBookedEvent message) => InvokeAsync(async () =>
     {
         if (_selectedRoom?.Id == message.ResourceId) await LoadScheduleAsync();
+        if (_view == "bookings") { _bookingsPage = 1; _myBookings = await BookingsApi.MineAsync(); }
         _realtimeConnected = Realtime.IsConnected; StateHasChanged();
     });
     private Task OnSlotCancelledAsync(SlotCancelledEvent message) => InvokeAsync(async () =>
     {
         if (_selectedRoom?.Id == message.ResourceId) await LoadScheduleAsync();
-        if (_view == "bookings") _myBookings = await BookingsApi.MineAsync();
+        if (_view == "bookings") { _bookingsPage = 1; _myBookings = await BookingsApi.MineAsync(); }
         _realtimeConnected = Realtime.IsConnected; StateHasChanged();
     });
     private async Task CancelBookingAsync(BookingDto booking)
@@ -284,6 +327,7 @@ else
             }
             if (_roomImageFile is not null) await ResourcesApi.UploadImageAsync(id, _roomImageFile);
             _resources = await ResourcesApi.ListAsync();
+            _roomsPage = Math.Min(_roomsPage, RoomsPageCount);
             if (_selectedRoom?.Id == id && _resources.FirstOrDefault(room => room.Id == id) is { } updatedRoom)
                 await SelectRoomAsync(updatedRoom);
             _editingRoom = false; _editingRoomId = null; _roomImageFile = null; _roomImagePreview = "/images/rooms/no_image_rooms.png";
@@ -293,7 +337,19 @@ else
     }
     private async Task DeleteRoomAsync(ResourceDto room)
     {
-        try { await ResourcesApi.DeleteAsync(room.Id); _resources = await ResourcesApi.ListAsync(); if (_selectedRoom?.Id == room.Id) _selectedRoom = null; SetMessage("Room deleted."); }
+        try
+        {
+            await ResourcesApi.DeleteAsync(room.Id);
+            _resources = await ResourcesApi.ListAsync();
+            _roomsPage = Math.Min(_roomsPage, RoomsPageCount);
+            if (_selectedRoom?.Id == room.Id)
+            {
+                if (Realtime.IsConnected) await Realtime.LeaveResourceAsync(room.Id);
+                _selectedRoom = null;
+                if (VisibleRooms.FirstOrDefault() is { } nextRoom) await SelectRoomAsync(nextRoom);
+            }
+            SetMessage("Room deleted.");
+        }
         catch (Exception ex) { SetMessage(ex.Message, true); }
     }
     private async Task AddSlotAsync()
@@ -347,15 +403,18 @@ else
     {
         var file = args.File;
         if (file.Size is <= 0 or > 10 * 1024 * 1024) { SetMessage("Avatar must be no larger than 10 MB.", true); return; }
-        try { _user = await Auth.UploadAvatarAsync(file); }
+        try { _user = await Auth.UploadAvatarAsync(file); _avatarRevision = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); }
         catch (Exception ex) { SetMessage(ex.Message, true); }
     }
     private async Task RemoveAvatarAsync()
     {
-        try { await Auth.RemoveAvatarAsync(); _user = _user! with { AvatarUrl = null }; }
+        try { await Auth.RemoveAvatarAsync(); _user = _user! with { AvatarUrl = null }; _avatarRevision = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); }
         catch (Exception ex) { SetMessage(ex.Message, true); }
     }
     private async Task LogoutAsync() { if (_selectedRoom is not null) await Realtime.LeaveResourceAsync(_selectedRoom.Id); await Auth.LogoutAsync(); await Realtime.StopAsync(); _user = null; _resources = []; _selectedRoom = null; }
+    private long _avatarRevision = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    private string ProfileAvatarUrl => _user?.AvatarUrl is { Length: > 0 } avatarUrl ? $"{avatarUrl}?v={_avatarRevision}" : "/images/placeholders/avatar.svg";
+    private static string DisplayInitials(string name) { var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries); return parts.Length > 1 ? $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[1][0])}" : name[..Math.Min(name.Length, 2)].ToUpperInvariant(); }
     private void SetMessage(string message, bool error = false) { _message = message; _isError = error; }
 
     public async ValueTask DisposeAsync()

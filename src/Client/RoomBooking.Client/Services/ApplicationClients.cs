@@ -7,6 +7,7 @@ using RoomBooking.Shared.Dtos.Auth;
 using RoomBooking.Shared.Dtos.Bookings;
 using RoomBooking.Shared.Dtos.Resources;
 using RoomBooking.Shared.Dtos.Schedule;
+using RoomBooking.Shared.Dtos.Analytics;
 
 namespace RoomBooking.Client.Services;
 
@@ -95,3 +96,30 @@ public sealed class BookingClient(ApiClient api) : IBookingClient
 
 public sealed record UpdateProfileRequest(string DisplayName, string? PhoneNumber);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+public interface IAnalyticsClient
+{
+    Task<AnalyticsDashboardDto?> GetDashboardAsync(string period = "Week", CancellationToken ct = default);
+    Task<BookingStatisticsDto?> GetBookingStatisticsAsync(string period = "Week", CancellationToken ct = default);
+    Task<IReadOnlyList<RoomUtilisationDto>> GetRoomUtilisationAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<UserActivityDto>> GetUserActivityAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<TimeSlotPopularityDto>> GetTimeSlotPopularityAsync(CancellationToken ct = default);
+}
+
+public sealed class AnalyticsClient(ApiClient api) : IAnalyticsClient
+{
+    public async Task<AnalyticsDashboardDto?> GetDashboardAsync(string period = "Week", CancellationToken ct = default) =>
+        await api.GetAsync<AnalyticsDashboardDto>($"/api/analytics/dashboard?period={period}", ct);
+
+    public async Task<BookingStatisticsDto?> GetBookingStatisticsAsync(string period = "Week", CancellationToken ct = default) =>
+        await api.GetAsync<BookingStatisticsDto>($"/api/analytics/bookings?period={period}", ct);
+
+    public async Task<IReadOnlyList<RoomUtilisationDto>> GetRoomUtilisationAsync(CancellationToken ct = default) =>
+        await api.GetAsync<List<RoomUtilisationDto>>("/api/analytics/rooms/utilisation", ct) ?? [];
+
+    public async Task<IReadOnlyList<UserActivityDto>> GetUserActivityAsync(CancellationToken ct = default) =>
+        await api.GetAsync<List<UserActivityDto>>("/api/analytics/users/activity", ct) ?? [];
+
+    public async Task<IReadOnlyList<TimeSlotPopularityDto>> GetTimeSlotPopularityAsync(CancellationToken ct = default) =>
+        await api.GetAsync<List<TimeSlotPopularityDto>>("/api/analytics/timeslots/popularity", ct) ?? [];
+}

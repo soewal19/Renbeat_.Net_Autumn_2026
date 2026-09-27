@@ -12,5 +12,7 @@ builder.Services.AddScoped<IBookingClient, BookingClient>();
 builder.Services.AddScoped<IAdminClient, AdminClient>();
 builder.Services.AddScoped<IDirectoryClient, DirectoryClient>();
 builder.Services.AddScoped<IScheduleRealtimeClient, ScheduleRealtimeClient>();
+builder.Services.AddScoped<IAnalyticsClient, AnalyticsClient>();
+builder.Services.AddScoped<IAiChatClient, AiChatClient>();
 
 await builder.Build().RunAsync();

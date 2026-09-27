@@ -1,0 +1,5 @@
+<div class="analytics-chart-empty"><span>↗</span><strong>@Message</strong><p>@Detail</p></div>
+@code {
+    [Parameter, EditorRequired] public string Message { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Detail { get; set; } = string.Empty;
+}

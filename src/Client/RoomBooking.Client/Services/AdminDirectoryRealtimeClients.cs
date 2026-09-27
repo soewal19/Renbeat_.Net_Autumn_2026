@@ -50,7 +50,7 @@ public sealed class DirectoryClient(ApiClient api) : IDirectoryClient
         {
             var email = person.Email ?? string.Empty;
             users.TryGetValue(email, out var local);
-            users[email] = new DirectoryPerson(person.Id, person.DisplayName, email, local?.Role ?? "Workspace member", local?.Team ?? "Workspace", local?.Location ?? string.Empty, local?.Avatar, "database");
+            users[email] = new DirectoryPerson(person.Id, person.DisplayName, email, local?.Role ?? "Workspace member", local?.Team ?? "Workspace", local?.Location ?? string.Empty, person.AvatarUrl ?? local?.Avatar, "database");
         }
 
         var localRooms = fixture.Rooms.Select((room, index) => new DirectoryRoom($"fixture-{index + 1}", room.Name, room.Description, room.Capacity, room.Features, room.Location, room.Image, "file"));
@@ -75,7 +75,7 @@ public sealed class DirectoryClient(ApiClient api) : IDirectoryClient
         public List<DatabasePerson> Users { get; set; } = [];
         public List<DatabaseRoom> Rooms { get; set; } = [];
     }
-    private sealed class DatabasePerson { public string Id { get; set; } = string.Empty; public string DisplayName { get; set; } = string.Empty; public string? Email { get; set; } }
+    private sealed class DatabasePerson { public string Id { get; set; } = string.Empty; public string DisplayName { get; set; } = string.Empty; public string? Email { get; set; } public string? AvatarUrl { get; set; } }
     private sealed class DatabaseRoom { public int Id { get; set; } public string Name { get; set; } = string.Empty; public string Description { get; set; } = string.Empty; public bool IsActive { get; set; } public string ImageUrl { get; set; } = "/images/rooms/no_image_rooms.png"; }
     private sealed class DirectoryFixture { public List<FixturePerson> Users { get; set; } = []; public List<FixtureRoom> Rooms { get; set; } = []; }
     private sealed class FixturePerson { public string Name { get; set; } = string.Empty; public string Email { get; set; } = string.Empty; public string Role { get; set; } = string.Empty; public string Team { get; set; } = string.Empty; public string Location { get; set; } = string.Empty; public string? Avatar { get; set; } }

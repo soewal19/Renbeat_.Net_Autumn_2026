@@ -1,0 +1,46 @@
+@using Microsoft.AspNetCore.Components.Web
+@inject IAiChatClient Ai
+@inject IJSRuntime JS
+
+<section class="page-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span> ROOMLY ASSISTANT</div><h1>AI <span>booking.</span></h1><p class="muted">Ask about rooms and availability, or explicitly request a booking with room, date and time.</p></div></section>
+<section class="panel feature-panel ai-chat-panel" aria-label="AI assistant">
+    <div class="ai-chat-history" aria-live="polite">
+        @foreach (var item in _messages)
+        {
+            <article class="ai-chat-message @(item.IsUser ? "user" : "assistant")"><strong>@(item.IsUser ? "You" : "Roomly AI")</strong><p>@item.Text</p>
+                @if (item.Receipt is not null) { <p class="ai-booking-badge">Booked by AI · @item.Receipt.ResourceName · @item.Receipt.StartUtc.ToLocalTime().ToString("g")</p> }
+            </article>
+        }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_error)) { <p class="message" role="alert">@_error</p> }
+    <form class="ai-chat-form" @onsubmit="SendAsync" @onsubmit:preventDefault>
+        <label class="sr-only" for="ai-message">Message</label><textarea id="ai-message" @bind="_message" maxlength="2000" rows="3" placeholder="Book Cedar tomorrow at 10:00 AM" disabled="@_busy"></textarea>
+        <button class="button button-primary" type="submit" disabled="@(_busy || string.IsNullOrWhiteSpace(_message))">@(_busy ? "Sending…" : "Send")</button>
+    </form>
+    <small>Direct booking requires an explicit request and an exact future slot. Availability suggestions require your confirmation.</small>
+</section>
+
+@code {
+    [Parameter] public EventCallback BookingCompleted { get; set; }
+    private sealed record ChatLine(string Text, bool IsUser, AiBookingReceiptClient? Receipt = null);
+    private readonly List<ChatLine> _messages = [];
+    private string _message = "", _error = "";
+    private bool _busy;
+
+    private async Task SendAsync()
+    {
+        var prompt = _message.Trim();
+        if (prompt.Length == 0 || _busy) return;
+        _messages.Add(new ChatLine(prompt, true)); _message = ""; _error = ""; _busy = true;
+        try
+        {
+            var zone = await JS.InvokeAsync<string>("roomly.getTimeZone");
+            var result = await Ai.SendAsync(prompt, zone);
+            if (result is null) throw new InvalidOperationException("The assistant returned an empty response.");
+            _messages.Add(new ChatLine(result.Answer, false, result.BookingReceipt));
+            if (result.BookingReceipt is not null) await BookingCompleted.InvokeAsync();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+}
