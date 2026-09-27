@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using RoomBooking.Server.Infrastructure.Persistence;
 using Testcontainers.MsSql;
@@ -33,6 +34,7 @@ public class ConcurrencyTestWebFactory : WebApplicationFactory<Program>, IAsyncL
                         maxRetryCount: 5,
                         maxRetryDelay: TimeSpan.FromSeconds(5),
                         errorNumbersToAdd: null));
+
             });
         });
 

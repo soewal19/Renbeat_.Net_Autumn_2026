@@ -5,13 +5,14 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using RoomBooking.Server.Infrastructure.Persistence;
 using RoomBooking.Server.Infrastructure.Persistence.Entities;
+using RoomBooking.Server.Features.Bookings;
 using RoomBooking.Server.Infrastructure.SignalR.Hubs;
 using RoomBooking.Shared.SignalR;
 
 namespace RoomBooking.Server.Features.Ai;
 
-/// <summary>Explicit tool allowlist. AI can inspect data and prepare a booking proposal, but never writes bookings.</summary>
-public sealed class AiToolService(AppDbContext db, ILogger<AiToolService> logger, IHubContext<ScheduleHub>? hub = null) : IAiToolService
+/// <summary>Explicit tool allowlist. AI booking uses the same BookingService and database uniqueness guarantee as manual booking.</summary>
+public sealed class AiToolService(AppDbContext db, ILogger<AiToolService> logger, BookingService bookingService) : IAiToolService
 {
     public async Task<string> ExecuteAsync(string toolName, string argumentsJson, string userId, CancellationToken cancellationToken, bool allowAutonomousBooking = false, string userTimeZone = "UTC")
     {
@@ -102,40 +103,17 @@ public sealed class AiToolService(AppDbContext db, ILogger<AiToolService> logger
             return new { success = false, error = "The requested local time is ambiguous due to a daylight saving change. Please specify another time." };
         var exactStartUtc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localStart, zone), TimeSpan.Zero);
 
-        var now = DateTimeOffset.UtcNow;
-        var slot = await db.TimeSlots.Include(x => x.Resource)
-            .FirstOrDefaultAsync(x => x.ResourceId == resourceId && x.StartUtc == exactStartUtc && x.StartUtc > now && x.Resource.IsActive, ct);
-        if (slot is null) return new { success = false, error = "No exact future slot matches that room, local date, and start time. No booking was created." };
+        var slot = await db.TimeSlots.AsNoTracking()
+            .Where(x => x.ResourceId == resourceId && x.StartUtc == exactStartUtc && x.StartUtc > DateTimeOffset.UtcNow && x.Resource.IsActive)
+            .Select(x => x.Id)
+            .FirstOrDefaultAsync(ct);
+        if (slot == 0) return new { success = false, error = "No exact future slot matches that room, local date, and start time. No booking was created." };
 
-        var booking = new Booking
-        {
-            TimeSlotId = slot.Id,
-            UserId = userId,
-            CreatedAtUtc = now,
-            IsAiGenerated = true
-        };
-        db.Bookings.Add(booking);
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex) when (DbConcurrencyHelper.IsUniqueConstraintViolation(ex))
-        {
-            logger.LogInformation("AI booking conflict for slot {SlotId}", slot.Id);
+        var result = await bookingService.CreateAsync(slot, userId, true, ct);
+        if (result.Failure == BookingFailure.Conflict)
             return new { success = false, conflict = true, error = "That slot was just booked by someone else. No booking was created." };
-        }
-
-        logger.LogInformation("AI created booking {BookingId} for slot {SlotId} and user {UserId}", booking.Id, slot.Id, userId);
-        if (hub is not null)
-        {
-            var eventData = new SlotBookedEvent(slot.Id, slot.ResourceId, booking.Id, booking.CreatedAtUtc);
-            try { await hub.Clients.Group(ScheduleHub.GetGroupName(slot.ResourceId)).SendAsync(ScheduleHubMethods.SlotBooked, eventData, ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning("Could not publish realtime update for committed AI booking {BookingId}", booking.Id);
-            }
-        }
-
-        return new { success = true, bookingId = booking.Id, timeSlotId = slot.Id, resourceId = slot.ResourceId, resourceName = slot.Resource.Name, startUtc = slot.StartUtc, endUtc = slot.EndUtc };
+        if (!result.Succeeded) return new { success = false, error = "The requested slot is no longer bookable." };
+        var booking = result.Booking!;
+        return new { success = true, bookingId = booking.Id, timeSlotId = booking.TimeSlotId, resourceId = booking.ResourceId, resourceName = booking.ResourceName, startUtc = booking.SlotStartUtc, endUtc = booking.SlotEndUtc };
     }
 }

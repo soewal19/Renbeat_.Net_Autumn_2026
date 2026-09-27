@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using RoomBooking.Server.Features.Ai;
+using RoomBooking.Server.Features.Bookings;
 using RoomBooking.Server.Infrastructure.Persistence;
 using RoomBooking.Server.Infrastructure.Persistence.Entities;
 
@@ -99,7 +100,7 @@ public sealed class AiFeatureTests
             new Booking { Id = 21, TimeSlotId = 10, UserId = user2.Id, User = user2, TimeSlot = new TimeSlot { Id = 10, ResourceId = 7, Resource = room, StartUtc = DateTimeOffset.UtcNow.AddDays(1), EndUtc = DateTimeOffset.UtcNow.AddDays(1).AddHours(1) } });
         await db.SaveChangesAsync();
 
-        var service = new AiToolService(db, NullLogger<AiToolService>.Instance);
+        var service = new AiToolService(db, NullLogger<AiToolService>.Instance, new BookingService(db, NullLogger<BookingService>.Instance));
         var resources = await service.ExecuteAsync("get_resources", "{}", user1.Id, CancellationToken.None);
         resources.Should().Contain("Cedar");
         var mine = await service.ExecuteAsync("get_my_bookings", "{}", user1.Id, CancellationToken.None);
@@ -129,7 +130,7 @@ public sealed class AiFeatureTests
         db.TimeSlots.Add(slot);
         await db.SaveChangesAsync();
 
-        var service = new AiToolService(db, NullLogger<AiToolService>.Instance);
+        var service = new AiToolService(db, NullLogger<AiToolService>.Instance, new BookingService(db, NullLogger<BookingService>.Instance));
         var result = await service.ExecuteAsync("propose_booking", "{\"timeSlotId\":9}", "user-1", CancellationToken.None);
         using var json = JsonDocument.Parse(result);
         json.RootElement.GetProperty("available").GetBoolean().Should().BeTrue();
@@ -146,7 +147,7 @@ public sealed class AiFeatureTests
         var slotStart = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1).AddHours(10), TimeSpan.Zero);
         var slot = new TimeSlot { Id = 9, ResourceId = room.Id, Resource = room, StartUtc = slotStart, EndUtc = slotStart.AddHours(1) };
         db.Users.Add(user); db.Resources.Add(room); db.TimeSlots.Add(slot); await db.SaveChangesAsync();
-        var service = new AiToolService(db, NullLogger<AiToolService>.Instance);
+        var service = new AiToolService(db, NullLogger<AiToolService>.Instance, new BookingService(db, NullLogger<BookingService>.Instance));
 
         var denied = await service.ExecuteAsync("book_slot", "{\"timeSlotId\":9}", user.Id, CancellationToken.None);
         JsonDocument.Parse(denied).RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
@@ -251,7 +252,7 @@ public sealed class AiFeatureTests
     private static AppDbContext CreateDb(string name) => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(name).Options);
 
     private static GroqAiAssistant CreateAssistant(AppDbContext db, HttpMessageHandler handler, GroqOptions options)
-        => new(new HttpClient(handler), Options.Create(options), new AiToolService(db, NullLogger<AiToolService>.Instance), new AiSkillService(db), NullLogger<GroqAiAssistant>.Instance);
+        => new(new HttpClient(handler), Options.Create(options), new AiToolService(db, NullLogger<AiToolService>.Instance, new BookingService(db, NullLogger<BookingService>.Instance)), new AiSkillService(db), NullLogger<GroqAiAssistant>.Instance);
 
     private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
