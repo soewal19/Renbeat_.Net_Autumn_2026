@@ -4,7 +4,7 @@ This guide describes how to use and operate the optional Roomly AI booking featu
 
 ## Where to find it
 
-The primary application is the Blazor WebAssembly client at `/`. Open **AI Workspace** (or visit `/index.html`) to use the AI chat. Both interfaces use the same authenticated API, bookings, database constraints, and SignalR hub. AI chat requires a signed-in account.
+The application is a single Blazor WebAssembly interface at the root. Open the **AI booking** tab to use the chat. It uses the same authenticated API, booking service, database constraints, and SignalR hub. AI chat requires a signed-in account.
 
 ## Two booking modes
 

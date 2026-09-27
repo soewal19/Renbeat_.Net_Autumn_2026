@@ -33,7 +33,7 @@ Provide a reviewable, runnable meeting-room booking system whose database preven
 
 ## Architecture decisions
 
-The application is a modular monolith: ASP.NET Core Minimal API and a Blazor Web App with Interactive WebAssembly are hosted on one origin. Typed C# clients isolate API and SignalR access from Razor components. The older static AI workspace remains available at `/index.html` for existing demo workflows. Booking commands continue over HTTP and SQL uniqueness remains authoritative.
+The application is a modular monolith: ASP.NET Core Minimal API and a Blazor Web App with Interactive WebAssembly are hosted on one origin. Typed C# clients isolate API and SignalR access from Razor components. AI assistance is available as a Blazor workspace view. Booking commands continue over HTTP and SQL uniqueness remains authoritative.
 
 ## Delivery sequence
 

@@ -5,7 +5,7 @@ This guide explains the main workflows in Roomly. The application UI, this guide
 ## Open the application
 
 - Main booking application: `/`
-- AI workspace and its extended Help page: `/index.html`
+- AI booking assistant: the AI booking tab in the Blazor workspace
 - Interactive API reference in Development: `/swagger`
 - OpenAPI document in Development: `/openapi/v1.json`
 
@@ -38,7 +38,7 @@ The fixture is demonstration data, not an identity provider or a source of booki
 
 ## AI-assisted booking
 
-Open **AI workspace** and sign in. A direct request can book a slot when it clearly expresses booking intent and identifies an exact room, date, and start time. Example:
+Open the **AI booking** tab and sign in. A direct request can book a slot when it clearly expresses booking intent and identifies an exact room, date, and start time. Example:
 
 > Book Cedar on September 29 at 10:00 AM.
 

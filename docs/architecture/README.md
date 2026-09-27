@@ -11,7 +11,7 @@ For product workflows, roles, AI booking, and troubleshooting, see the [Roomly U
 | C3 — Components | [c4-component.md](c4-component.md) | How do the UI clients, API features, persistence, and realtime notifications fit together? |
 | C4 — Deployment | [c4-deployment.md](c4-deployment.md) | How are the containers provisioned and connected in Azure? |
 
-Diagrams use Mermaid and can be viewed in GitHub, compatible Markdown editors, or the repository's local documentation links in the AI workspace. Keep these views consistent with `README.md`, `docs/specs/meeting-room-system.md`, and the Bicep modules when architecture changes.
+Diagrams use Mermaid and can be viewed in GitHub, compatible Markdown editors, or the repository's project documentation links in the main application. Keep these views consistent with `README.md`, `docs/specs/meeting-room-system.md`, and the Bicep modules when architecture changes.
 
 ## Key runtime decisions
 

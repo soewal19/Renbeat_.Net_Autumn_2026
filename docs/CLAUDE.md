@@ -78,7 +78,7 @@ Use the following stack unless a documented technical reason requires a change.
 - Same-origin ASP.NET Core host in `src/Server/Components`
 - Typed C# client services for API and SignalR; keep raw `HttpClient` calls out of Razor components
 - Keep booking commands on HTTP; SignalR is for notifications and schedule groups
-- Static AI workspace in `src/Server/wwwroot/index.html` is a legacy/demo surface, not the primary booking UI
+- Static assets under wwwroot are served by the primary Blazor application.
 
 ### Database
 
@@ -519,7 +519,7 @@ The UI must update without a browser refresh.
 
 ## 11. Frontend Rules
 
-The primary client is the same-origin Blazor Web App in `src/Client/RoomBooking.Client`, hosted by ASP.NET Core. Keep authentication cookies and API calls on one origin without adding a separate deployment unit. `/index.html` remains a legacy static AI workspace.
+The primary client is the same-origin Blazor Web App in `src/Client/RoomBooking.Client`, hosted by ASP.NET Core. Keep authentication cookies and API calls on one origin without adding a separate deployment unit. The AI assistant is a Blazor workspace view.
 
 Recommended pages/components:
 
@@ -650,7 +650,7 @@ Preferred hosting model:
 One Azure App Service
     |
     +-- ASP.NET Core backend
-    +-- Blazor Web App host and static AI workspace
+    +-- Blazor Web App host and static assets
 ```
 
 Additional services:

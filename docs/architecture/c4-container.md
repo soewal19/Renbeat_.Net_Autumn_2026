@@ -18,4 +18,4 @@ flowchart TB
     ai -->|optional server-side API key| groq
 ```
 
-The primary client is `src/Client/RoomBooking.Client`, hosted by the ASP.NET Core app on one origin. The legacy static AI workspace remains available at `/index.html`.
+The primary and only client is src/Client/RoomBooking.Client, hosted by the ASP.NET Core app on one origin. The AI booking chat is a Blazor workspace view backed by the same authenticated API.

@@ -27,7 +27,7 @@ The **database is the single source of truth** for booking uniqueness.
 CREATE UNIQUE INDEX IX_Bookings_TimeSlotId_Unique ON Bookings (TimeSlotId);
 ```
 
-EF Core configuration in [`BookingConfiguration.cs`](file:///e:/TestTask/ReenBeat2026Autumn2026/src/Server/Infrastructure/Persistence/Configurations/BookingConfiguration.cs):
+EF Core configuration in [`BookingConfiguration.cs`](../../src/Server/Infrastructure/Persistence/Configurations/BookingConfiguration.cs):
 
 ```csharp
 builder.HasIndex(b => b.TimeSlotId)
@@ -85,7 +85,7 @@ Optimistic concurrency on `TimeSlot` would still require both writing a booking 
 
 ### Mandatory concurrency integration test
 
-Implemented in [`ConcurrencyBookingTests.cs`](file:///e:/TestTask/ReenBeat2026Autumn2026/tests/ConcurrencyTests/).
+Implemented in [`ConcurrencyBookingTests.cs`](../../tests/ConcurrencyTests/).
 
 Scenario:
 1. Start a Testcontainers MS SQL container.
@@ -106,7 +106,15 @@ The test intentionally uses a real SQL Server, not mocked repositories, because 
 
 ## Related Code
 
-- Confliguration: [BookingConfiguration.cs](file:///e:/TestTask/ReenBeat2026Autumn2026/src/Server/Infrastructure/Persistence/Configurations/BookingConfiguration.cs)
-- Detection helper: [DbConcurrencyHelper](file:///e:/TestTask/ReenBeat2026Autumn2026/src/Server/Program.cs#L155-L178)
-- Booking endpoint with conflict handling: [MapBookingsApi](file:///e:/TestTask/ReenBeat2026Autumn2026/src/Server/Program.cs#L490-L607)
-- Global ProblemDetails mapping: [Program.cs ProblemDetails](file:///e:/TestTask/ReenBeat2026Autumn2026/src/Server/Program.cs#L38-L53)
+- Configuration: [BookingConfiguration.cs](../../src/Server/Infrastructure/Persistence/Configurations/BookingConfiguration.cs)
+- Detection helper: [DbConcurrencyHelper](../../src/Server/Features/Api/EndpointMappings.cs)
+- Booking endpoint mapping: [MapBookingsApi](../../src/Server/Features/Api/EndpointMappings.cs)
+- Shared concurrency exception mapping: [Program.cs](../../src/Server/Program.cs)
+
+
+## Booking entry points
+
+The HTTP booking endpoint and the AI book_slot tool both call the same BookingService. The AI flow performs exact room/date/time and time-zone validation before it supplies a slot ID; the service revalidates that the slot is active and in the future, attempts the same atomic insert, maps unique-key conflicts, and publishes SlotBooked after persistence.
+### Schema migration correction
+
+Before Azure deployment, SQL Server integration tests showed the original AiSkills migration requested `nvarchar(12000)` and `nvarchar(8000)`, lengths SQL Server does not support for `nvarchar(n)`. The unapplied migration was corrected to `nvarchar(max)` and its model snapshot aligned. Existing deployed databases must never have an applied migration edited; this correction is safe only because the affected migration could not have succeeded against SQL Server.

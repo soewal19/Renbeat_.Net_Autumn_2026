@@ -1,18 +1,33 @@
 # Repository instructions
 
-Follow the project guidance in [docs/CLAUDE.md](docs/CLAUDE.md) for architecture, coding rules, concurrency invariants, security requirements, and acceptance checks.
+This repository is a .NET 10 modular monolith. Read [docs/CLAUDE.md](docs/CLAUDE.md) for detailed requirements, commands, security guidance, and review checks.
 
-The booking uniqueness constraint in the database is mandatory. Do not replace it with a pre-check or application lock. Keep the browser app same-origin with the API and publish SignalR booking events only after the database save succeeds.
+## Architecture
 
-## Optional AI, Skills, Help, OpenAPI and architecture documentation
+- ASP.NET Core host and API: `src/Server/`.
+- Primary UI: same-origin Blazor Web App with Interactive WebAssembly in `src/Client/RoomBooking.Client/`, hosted by `src/Server/Components/`.
+- Shared HTTP contracts: `src/Shared/`; typed browser clients live in the Blazor client services.
+- API features and endpoint mappings: `src/Server/Features/`.
+- EF Core, Identity, and SignalR infrastructure: `src/Server/Infrastructure/`.
+- Azure resources are described in `infra/`; CI and deployment workflows are in `.github/workflows/`.
+- There is one application UI. Keep AI Assistant, Skills, Help, analytics, and booking workflows in Blazor. Do not reintroduce a second static application under `wwwroot`.
 
-- Preserve the existing booking path and database unique index. AI is optional and must never become a dependency of booking correctness or application startup.
-- The checked-in frontend is same-origin HTML/CSS/JavaScript under `src/Server/wwwroot`. Do not describe or assume a Blazor WebAssembly client unless one is actually added.
-- `IAiAssistant` is the provider boundary. Groq credentials stay server-side in environment/configuration (`GROQ_API_KEY`); never place them in Razor, JavaScript, static assets, or browser configuration. Model/endpoint can be configured (`GROQ_MODEL`, `GROQ_ENDPOINT`).
-- AI tools are a fixed allowlist and read-only. They call `IAiToolService`, receive the authenticated user ID from the server, and never accept arbitrary code, SQL, URLs, or discovered tools. Do not add an AI booking tool unless it uses the unchanged BookingService/API path and the database uniqueness constraint.
-- Skills are untrusted text guidance, not executable code. Only admins manage them. AI-generated/uploaded content must validate as a `SkillDefinition`, remain an editable unsaved draft first, save inactive, and require an explicit admin activation. Upload only `.md`, `.txt`, `.json`, validate UTF-8 and enforce the 64 KB cap; never execute uploads.
-- A Groq failure or missing key must produce a safe AI-unavailable response while core auth, rooms, schedules, bookings, concurrency and SignalR continue working. Never expose provider errors/secrets or log prompts/passwords/tokens.
-- Keep OpenAPI summaries, auth/role information, request validation and explicit response codes current. The booking API documents 201/400/401/403/404/409. Swagger UI is Development-only.
-- Keep Mermaid C4 diagrams in `docs/architecture/` accurate to actual deployed code. Update README and both CLAUDE.md files when architecture/configuration changes.
-- Help content must explain booking, conflict behavior, SignalR, roles, optional AI and Skills; Swagger links reflect its Development-only availability.
-- Run the focused AI tests, complete Release build and full tests before claiming completion. SQL integration/concurrency tests require Docker; report unavailable environment checks honestly.
+## Booking invariant
+
+`BookingService` is the single application service used by both the regular booking endpoint and AI `book_slot`. The database unique index on `Booking.TimeSlotId` is the final authority. Never replace it with a check-then-insert, a C# lock, or frontend validation. Map duplicate-key violations to a normal conflict result, not HTTP 500. Publish `SlotBooked` only after persistence succeeds.
+
+## AI and security
+
+- AI is optional and must not be required for startup or ordinary booking. `IAiAssistant` is the server-side provider boundary; Groq credentials stay in User Secrets, Key Vault, or environment configuration.
+- Expose only allowlisted tools. `book_slot` is enabled only for explicit booking intent and must call `BookingService` with a server-derived user ID and an exact, validated future slot.
+- Availability proposals are read-only until the user confirms. The AI cannot cancel bookings or access arbitrary SQL, code, files, URLs, or tools.
+- Skills are untrusted text guidance. Validate UTF-8 uploads (`.md`, `.txt`, `.json`, maximum 64 KB); save drafts inactive and require explicit administrator activation. Never execute skill content.
+- Never commit passwords, tokens, connection strings, local `appsettings.Development.json`, or account lists. Production and staging must fail startup when Azure SQL configuration is missing.
+- Never return provider/database exception details to clients or log credentials, prompts, or tokens.
+
+## Realtime, migrations, and tests
+
+- Booking commands use HTTP. SignalR is for authorized resource schedule groups and notifications after successful persistence only.
+- Create a new EF migration for every model change. Never change a migration already applied to a shared database. If an unapplied historical migration contains schema SQL that the target database cannot execute, correct it before deployment and document the reason. Do not suppress `PendingModelChangesWarning` to hide snapshot drift.
+- Run `dotnet build RoomBooking.slnx --configuration Release` and `dotnet test` before declaring a change verified. Integration and concurrency tests use SQL Server Testcontainers and require Docker.
+- Update the README, user/AI guides, C4 diagrams, ADRs, and this file when behavior or architecture changes.
